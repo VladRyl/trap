@@ -3,58 +3,89 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Trap</title>
+<title>TRAP: Ten Rooms · v12</title>
 <style>
   :root{
-    --ink:#0E1319; --ink-2:#141B23;
-    --bone:#DED6C4; --bone-dim:#6E6A60;
-    --blood:#C8382C; --gold:#D9A441;
+    --ink:#07090d; --ink-2:#0d1118; --ink-3:#171b22;
+    --bone:#e6dfcf; --bone-dim:#817b70;
+    --blood:#b72327; --blood-bright:#e13d36; --gold:#d6a743;
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{height:100%;overflow:hidden;background:var(--ink)}
+  html,body{height:100%;overflow:hidden;background:#050609}
   body{
     font-family:"Helvetica Neue",Arial,sans-serif;color:var(--bone);
     display:flex;flex-direction:column;align-items:center;
     user-select:none;touch-action:none;
+    background:
+      radial-gradient(circle at 50% 16%,rgba(120,16,20,.16),transparent 36%),
+      repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 1px,transparent 1px 4px),
+      #050609;
   }
+  body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:20;
+    background:radial-gradient(ellipse at center,transparent 48%,rgba(0,0,0,.74) 100%);
+    mix-blend-mode:multiply}
 
-  #hud{width:100%;padding:14px 16px 10px;display:flex;align-items:baseline;
-       justify-content:space-between;flex:0 0 auto}
-  #lvl{font-size:11px;letter-spacing:.22em;text-transform:uppercase;
-       color:var(--bone-dim);font-weight:600}
-  .cnt{font-family:"Arial Narrow",Impact,sans-serif;font-size:32px;line-height:.9;
-       font-weight:700;font-variant-numeric:tabular-nums;transition:transform .09s ease-out}
-  .cnt small{font-family:"Helvetica Neue",Arial,sans-serif;font-size:10px;
-             letter-spacing:.2em;font-weight:600;color:var(--bone-dim);
-             margin-right:7px;vertical-align:2px}
-  .cnt.bump{transform:scale(1.28)}
-  #coins{color:var(--gold)} #creq{color:var(--bone-dim)}
-  #deaths{color:var(--blood)}
+  #hud{width:min(100%,560px);min-height:68px;padding:12px 14px 10px;display:grid;
+       grid-template-columns:1.25fr 1fr .9fr .9fr;align-items:end;gap:8px;flex:0 0 auto;
+       background:linear-gradient(180deg,rgba(18,21,28,.96),rgba(7,9,13,.86));
+       border-bottom:1px solid #292128;box-shadow:0 8px 28px rgba(0,0,0,.38);z-index:2}
+  #lvl{font-size:10px;line-height:1.4;letter-spacing:.18em;text-transform:uppercase;
+       color:var(--bone-dim);font-weight:700;padding-bottom:3px;text-shadow:0 1px #000}
+  .cnt{font-family:"Arial Narrow",Impact,sans-serif;font-size:29px;line-height:.9;
+       font-weight:700;font-variant-numeric:tabular-nums;transition:transform .09s ease-out;
+       text-align:right;text-shadow:0 2px 0 #000,0 0 12px currentColor}
+  .cnt small{display:block;font-family:"Helvetica Neue",Arial,sans-serif;font-size:8px;
+             letter-spacing:.18em;font-weight:700;color:var(--bone-dim);
+             margin:0 0 5px;vertical-align:2px;text-shadow:none}
+  .cnt.bump{transform:scale(1.24)}
+  #coins{color:var(--gold)} #creq{color:var(--bone-dim);font-size:.62em}
+  #deaths{color:#8d3838} #lives{color:var(--blood-bright)}
 
-  #stage{flex:0 0 auto;position:relative;line-height:0}
-  canvas{display:block;background:var(--ink-2)}
+  #stage{flex:0 0 auto;position:relative;line-height:0;padding:4px;
+         background:linear-gradient(135deg,#2d2428,#0a0c11 45%,#332126);
+         box-shadow:0 18px 50px rgba(0,0,0,.7),0 0 30px rgba(118,12,20,.12)}
+  canvas{display:block;background:var(--ink-2);border:1px solid #3a2b31}
 
-  #pads{flex:1 1 auto;width:100%;display:flex;align-items:stretch;
-        border-top:1px solid #1B222B}
-  .pad{display:flex;flex-direction:column;align-items:center;justify-content:center;
-       gap:9px;color:#333B45;transition:color .06s linear,background .06s linear}
-  #padL,#padR{flex:1} #padJ{flex:2;background:#111823}
-  .pad+.pad{border-left:1px solid #1B222B}
-  .pad .glyph{font-size:26px;line-height:1}
-  .pad .lbl{font-size:9px;letter-spacing:.22em;font-weight:700}
-  .pad.hit{color:var(--bone)} #padJ.hit{background:#1B2534}
+  #pads{flex:1 1 auto;width:min(100%,560px);display:flex;align-items:stretch;
+        border-top:1px solid #2a2228;background:#080a0f;z-index:2}
+  .pad{appearance:none;-webkit-appearance:none;border:0;margin:0;padding:0;font:inherit;touch-action:none;pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;
+       gap:8px;color:#47454b;transition:color .06s linear,background .06s linear;
+       background:linear-gradient(180deg,#0d1016,#07080c)}
+  #padL,#padR{flex:1} #padJ{flex:2;background:linear-gradient(180deg,#151018,#09090e)}
+  .pad+.pad{border-left:1px solid #282229}
+  .pad .glyph{font-size:25px;line-height:1;text-shadow:0 2px 5px #000}
+  .pad .lbl{font-size:8px;letter-spacing:.22em;font-weight:800}
+  .pad.hit{color:var(--bone);background:#17151b} #padJ.hit{background:#26141a;color:#e9d9cf}
 
-  #overlay{position:fixed;inset:0;background:rgba(14,19,25,.94);display:flex;
-           flex-direction:column;align-items:center;justify-content:center;
-           gap:18px;text-align:center;padding:32px;z-index:10}
+  #overlay{touch-action:manipulation;pointer-events:auto;position:fixed;inset:0;background:
+           radial-gradient(circle at 50% 35%,rgba(95,13,18,.22),transparent 33%),
+           repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 5px),
+           rgba(5,7,10,.965);display:flex;flex-direction:column;align-items:center;justify-content:center;
+           gap:18px;text-align:center;padding:32px;z-index:30}
   #overlay.hidden{display:none}
-  #ovTitle{font-family:"Arial Narrow",Impact,sans-serif;font-size:40px;
-           font-weight:700;letter-spacing:.04em;line-height:1}
-  #ovSub{font-size:13px;line-height:1.7;color:var(--bone-dim);max-width:320px}
-  #ovBtn{margin-top:6px;padding:13px 30px;background:none;border:1px solid var(--bone);
-         color:var(--bone);font-size:11px;letter-spacing:.2em;font-weight:700;
-         text-transform:uppercase;cursor:pointer}
-  #ovBtn:active{background:var(--bone);color:var(--ink)}
+  #ovTitle{font-family:"Arial Narrow",Impact,sans-serif;font-size:clamp(42px,11vw,70px);
+           font-weight:700;letter-spacing:.06em;line-height:.9;color:#eee5d4;
+           text-shadow:3px 4px 0 #3f0d13,0 0 24px rgba(190,25,30,.35)}
+  #ovTitle:after{content:"";display:block;width:70%;height:2px;margin:15px auto 0;
+                 background:linear-gradient(90deg,transparent,var(--blood),transparent)}
+  #ovSub{font-size:13px;line-height:1.75;color:#958d82;max-width:380px}
+  #ovSub b{color:#e7dfd0}
+  #betaLevelPicker{display:none;width:min(330px,86vw);padding:12px 14px 14px;border:1px solid #4d3b42;
+                   background:rgba(10,11,16,.82);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  #betaLevelPicker.show{display:block}
+  #betaLevelPicker label{display:block;margin-bottom:8px;color:var(--gold);font-size:9px;font-weight:800;
+                         letter-spacing:.22em;text-transform:uppercase}
+  #betaLevelSelect{width:100%;padding:11px 12px;border:1px solid #6a5158;border-radius:0;
+                   background:#0d1016;color:var(--bone);font:700 13px "Helvetica Neue",Arial,sans-serif;
+                   letter-spacing:.08em;outline:none;appearance:auto;-webkit-appearance:menulist}
+  #betaLevelSelect:focus{border-color:var(--gold);box-shadow:0 0 0 2px rgba(214,167,67,.12)}
+  #ovBtn{touch-action:manipulation;pointer-events:auto;margin-top:7px;padding:14px 34px;background:linear-gradient(180deg,#251116,#10090c);
+         border:1px solid #9d6f6e;color:#eee4d6;font-size:11px;letter-spacing:.22em;font-weight:800;
+         text-transform:uppercase;cursor:pointer;box-shadow:0 8px 26px rgba(0,0,0,.5);touch-action:manipulation;pointer-events:auto;position:relative;z-index:2;-webkit-user-select:none;user-select:none}
+  #ovBtn:active{background:var(--blood);color:white;transform:translateY(1px)}
+  #versionTag{position:fixed;right:10px;bottom:8px;z-index:25;font-size:10px;letter-spacing:.18em;
+    color:rgba(230,223,207,.38);font-weight:700;pointer-events:none;text-transform:lowercase;text-shadow:0 1px 2px #000}
+  @media(max-width:390px){#hud{padding-left:9px;padding-right:9px;gap:5px}.cnt{font-size:25px}#lvl{font-size:8px}}
 </style>
 </head>
 <body>
@@ -62,22 +93,44 @@
 <div id="hud">
   <div id="lvl">Level 1</div>
   <div class="cnt" id="coins"><small>COINS</small><span id="cnum">0</span><span id="creq">/?</span></div>
+  <div class="cnt" id="lives"><small>LIVES</small><span id="lnum">3</span></div>
   <div class="cnt" id="deaths"><small>DEATHS</small><span id="dnum">0</span></div>
 </div>
 
 <div id="stage"><canvas id="c"></canvas></div>
 
 <div id="pads">
-  <div class="pad" id="padL"><div class="glyph">◀</div><div class="lbl">LEFT</div></div>
-  <div class="pad" id="padR"><div class="glyph">▶</div><div class="lbl">RIGHT</div></div>
-  <div class="pad" id="padJ"><div class="glyph">▲</div><div class="lbl">JUMP</div></div>
+  <button class="pad" id="padL" type="button" aria-label="Move left"><div class="glyph">◀</div><div class="lbl">LEFT</div></button>
+  <button class="pad" id="padR" type="button" aria-label="Move right"><div class="glyph">▶</div><div class="lbl">RIGHT</div></button>
+  <button class="pad" id="padJ" type="button" aria-label="Jump"><div class="glyph">▲</div><div class="lbl">JUMP</div></button>
 </div>
 
 <div id="overlay">
   <div id="ovTitle">TRAP</div>
-  <div id="ovSub">Controls are at the bottom of the screen.<br><br>The flag will not let you through until you have <b>every</b> coin. How many there are, you only find out at the finish.</div>
-  <button id="ovBtn">Start</button>
+  <div id="ovSub">Ten rooms are waiting. Collect every coin and reach the flag.<br><br>You begin with <b>3 lives</b>. Lose them all and the nightmare starts from Level 1. Clear every level to earn <b>+1 life</b>.</div>
+  <div id="betaLevelPicker" aria-hidden="true">
+    <label for="betaLevelSelect">Beta level select</label>
+    <select id="betaLevelSelect" aria-label="Choose level for beta testing">
+      <option value="0">Level 1 · The Mouth</option>
+      <option value="1">Level 2 · False Mercy</option>
+      <option value="2">Level 3</option>
+      <option value="3">Level 4</option>
+      <option value="4">Level 5 · The Basement</option>
+      <option value="5">Level 6 · The Chapel</option>
+      <option value="6">Level 7 · The Ward</option>
+      <option value="7">Level 8 · The Shaft</option>
+      <option value="8">Level 9 · The Hunt</option>
+      <option value="9">Level 10 · The Ritual</option>
+    </select>
+  </div>
+  <button id="ovBtn" type="button"
+    onclick="window.__trapStart&&window.__trapStart(event)"
+    onpointerdown="window.__trapStart&&window.__trapStart(event)"
+    onpointerup="window.__trapStart&&window.__trapStart(event)"
+    ontouchstart="window.__trapStart&&window.__trapStart(event)"
+    ontouchend="window.__trapStart&&window.__trapStart(event)">Start</button>
 </div>
+<div id="versionTag">v17</div>
 
 <script>
 (()=>{
@@ -85,54 +138,168 @@
 
 /* ================= константи ================= */
 const FW=16, FH=14, GROUND_Y=11;
+
+// ===== BETA TEST =====
+// true  = нескінченні життя для тестування
+// false = звичайний режим із життями
+const BETA_TEST_MODE = true;
+
 const PW=0.8, PH=1.8;
 const SPEED=6.5, JUMP_V=20, GRAV=57.2, MAXFALL=32;
 const COYOTE=0.10, BUFFER=0.15;
 const REACH=SPEED*2*JUMP_V/GRAV;            // ≈4.55 тайла
 
-/* тайли: 0 порожньо 1 земля 2 блок? 3 вибитий 4 плита 5 фальшива 6 невидимий */
+/* тайли: 0 порожньо 1 земля 2 блок? 3 вибитий 4 плита 5 крихкий 6 невидимий 7 шипи 8 примарний міст */
 
 const cv=document.getElementById('c'), ctx=cv.getContext('2d');
 const lvlEl=document.getElementById('lvl');
 const dnum=document.getElementById('dnum'), dbox=document.getElementById('deaths');
+const lnum=document.getElementById('lnum'), lbox=document.getElementById('lives');
 const cnum=document.getElementById('cnum'), creq=document.getElementById('creq'),
       cbox=document.getElementById('coins');
 const ov=document.getElementById('overlay'), ovT=document.getElementById('ovTitle'),
       ovS=document.getElementById('ovSub'), ovB=document.getElementById('ovBtn');
+const betaLevelPicker=document.getElementById('betaLevelPicker');
+const betaLevelSelect=document.getElementById('betaLevelSelect');
+function setBetaPickerVisible(visible){
+  if(!BETA_TEST_MODE) return;
+  betaLevelPicker.classList.toggle('show',visible);
+  betaLevelPicker.setAttribute('aria-hidden',visible?'false':'true');
+}
+if(BETA_TEST_MODE){
+  ovS.innerHTML+='<br><br><b style="color:var(--gold)">BETA TEST: INFINITE LIVES</b>';
+  setBetaPickerVisible(true);
+}
 
-/* ================= спрайти 8×16 ================= */
-const PAL={W:'#DED6C4',S:'#9A9384',D:'#0E1319'};
-const SPRITES={
- stand:["..WWWW..",".WWWWWS.",".DDDDDD.",".WWWWWS.","..WWWW..",".WWWWWW.",
-        "WWWWWWWS","WWWWWWSS",".WWWWWS.",".WWWWWS.",".WWWWWS.",".WW..WS.",
-        ".WW..WS.",".WW..WS.","WWW..WWS","WWW..WWS"],
- run:  ["..WWWW..",".WWWWWS.",".DDDDDD.",".WWWWWS.","..WWWW..","WWWWWWWW",
-        "WWWWWWWS",".WWWWWSS",".WWWWWS.",".WWWWWS.",".WWWWS..",".WWW.WS.",
-        "WWW...WS","WW....WS","WW.....S",".W......"],
- jump: ["..WWWW..",".WWWWWS.",".DDDDDD.",".WWWWWS.","..WWWW..","W.WWWW.S",
-        "WWWWWWWS","WWWWWWSS","WWWWWWWS",".WWWWWS.",".WWWWWS.",".WW..WS.",
-        "WWW..WWS","WW....WS","........","........"]
-};
+/* ================= персонаж: мальований герой і ассети ================= */
 const SPR={};
 let TS=24, DPR=1;
+function roundedRect(g,x,y,w,h,r){
+  const rr=Math.min(r,w/2,h/2);
+  g.beginPath();
+  g.moveTo(x+rr,y);
+  g.arcTo(x+w,y,x+w,y+h,rr);
+  g.arcTo(x+w,y+h,x,y+h,rr);
+  g.arcTo(x,y+h,x,y,rr);
+  g.arcTo(x,y,x+w,y,rr);
+  g.closePath();
+}
+function drawHeroAsset(g,w,h,pose){
+  const u=Math.min(w/24,h/42);
+  const cx=w*.5;
+  const bob=(pose.bob||0)*u;
+  const leg=(pose.leg||0);
+  const arm=(pose.arm||0);
+  const tilt=(pose.tilt||0);
+  const hood=(pose.hood||0);
+  const lantern=(pose.lantern||0);
+  const glow=(pose.glow||.22);
+
+  g.clearRect(0,0,w,h);
+  g.save();
+  g.translate(0,bob);
+  g.translate(cx,h*.84);
+  g.rotate(tilt);
+  g.translate(-cx,-h*.84);
+
+  // back cloak
+  g.fillStyle='#161a22';
+  g.beginPath();
+  g.moveTo(cx-u*5.2,h-u*24);
+  g.quadraticCurveTo(cx-u*6.8,h-u*13,cx-u*5.3,h-u*2.8);
+  g.lineTo(cx+u*5.7,h-u*2.8);
+  g.quadraticCurveTo(cx+u*6.9,h-u*12.7,cx+u*4.9,h-u*24.2);
+  g.closePath(); g.fill();
+  g.strokeStyle='#05070a'; g.lineWidth=u*.75; g.stroke();
+
+  // legs
+  g.strokeStyle='#2f3542'; g.lineWidth=u*2.2; g.lineCap='round';
+  g.beginPath();
+  g.moveTo(cx-u*1.6,h-u*14.2); g.lineTo(cx-u*(1.9+leg*1.1),h-u*7.6); g.lineTo(cx-u*(2.4+leg*1.6),h-u*1.9);
+  g.moveTo(cx+u*1.6,h-u*14.2); g.lineTo(cx+u*(1.9-leg*1.1),h-u*7.5); g.lineTo(cx+u*(2.4-leg*1.6),h-u*2.0);
+  g.stroke();
+  g.fillStyle='#6a716f';
+  roundedRect(g,cx-u*(3.6+leg*1.6),h-u*3.2,u*2.7,u*1.3,u*.45); g.fill();
+  roundedRect(g,cx+u*(.9-leg*1.6),h-u*3.2,u*2.7,u*1.3,u*.45); g.fill();
+
+  // torso / coat
+  g.fillStyle='#252b36';
+  g.beginPath();
+  g.moveTo(cx-u*3.7,h-u*25.8);
+  g.quadraticCurveTo(cx,h-u*29.4,cx+u*3.7,h-u*25.8);
+  g.lineTo(cx+u*4.7,h-u*10.8);
+  g.quadraticCurveTo(cx+u*2.8,h-u*8.6,cx+u*1.5,h-u*2.8);
+  g.lineTo(cx-u*1.5,h-u*2.8);
+  g.quadraticCurveTo(cx-u*2.8,h-u*8.6,cx-u*4.7,h-u*10.8);
+  g.closePath(); g.fill();
+  g.strokeStyle='#40485a'; g.lineWidth=u*.8; g.stroke();
+  g.fillStyle='#761720'; g.fillRect(cx-u*.3,h-u*24,u*.6,u*20.7);
+  g.fillStyle='rgba(255,255,255,.08)'; g.fillRect(cx-u*2.5,h-u*23.5,u*.6,u*16);
+
+  // shoulders and arms
+  g.strokeStyle='#31384a'; g.lineWidth=u*1.8;
+  g.beginPath();
+  g.moveTo(cx-u*3.1,h-u*23.6); g.lineTo(cx-u*(5.3+arm*.9),h-u*(16.7+arm*1.2));
+  g.moveTo(cx+u*3.1,h-u*23.6); g.lineTo(cx+u*(5.0-arm*.7),h-u*(16.8-arm*1.0));
+  g.stroke();
+  g.fillStyle='#1e232c';
+  roundedRect(g,cx-u*6.2-arm*u*.85,h-u*18.5-arm*u*.7,u*2.1,u*1.4,u*.45); g.fill();
+  roundedRect(g,cx+u*3.9-arm*u*.55,h-u*18.2+arm*u*.45,u*2.1,u*1.4,u*.45); g.fill();
+
+  // lantern and chain
+  g.strokeStyle='#77715f'; g.lineWidth=u*.55;
+  g.beginPath();
+  g.moveTo(cx+u*(5.1-arm*.7),h-u*(16.8-arm*1.0));
+  g.lineTo(cx+u*(5.8+lantern*.2),h-u*(11.8+lantern*1.35));
+  g.stroke();
+  const lx=cx+u*(5.8+lantern*.2), ly=h-u*(10.2+lantern*1.35);
+  g.fillStyle='rgba(226,168,69,'+glow+')';
+  g.beginPath(); g.ellipse(lx,ly+u*.6,u*2.8,u*3.4,0,0,7); g.fill();
+  g.fillStyle='#cc9c3a'; roundedRect(g,lx-u*1.25,ly-u*.2,u*2.5,u*2.9,u*.45); g.fill();
+  g.strokeStyle='#f9e1a4'; g.lineWidth=u*.42; roundedRect(g,lx-u*1.25,ly-u*.2,u*2.5,u*2.9,u*.45); g.stroke();
+  g.fillStyle='rgba(255,235,170,.85)'; g.fillRect(lx-u*.62,ly+u*.18,u*1.24,u*1.16);
+
+  // hood + head
+  g.fillStyle='#171b24';
+  g.beginPath(); g.ellipse(cx,h-u*28.2,u*4.2,u*4.7,0,0,7); g.fill();
+  g.fillStyle='#d8d0c2';
+  g.beginPath(); g.ellipse(cx,h-u*(26.8+hood),u*2.4,u*2.8,0,0,7); g.fill();
+  g.fillStyle='#12151a';
+  g.beginPath();
+  g.moveTo(cx-u*2.6,h-u*27.8); g.quadraticCurveTo(cx,h-u*31.3,cx+u*2.6,h-u*27.8); g.lineTo(cx+u*1.5,h-u*23.8); g.lineTo(cx-u*1.5,h-u*23.8); g.closePath(); g.fill();
+  g.fillStyle='#d0282f';
+  g.fillRect(cx-u*1.5,h-u*26.5,u*.75,u*.42); g.fillRect(cx+u*.75,h-u*26.5,u*.75,u*.42);
+  g.fillStyle='#6f1821'; g.fillRect(cx-u*2.2,h-u*23.5,u*4.4,u*.95);
+
+  // scarf / coat details
+  g.fillStyle='#941923';
+  g.beginPath(); g.moveTo(cx-u*1.2,h-u*22.9); g.lineTo(cx+u*1.2,h-u*22.9); g.lineTo(cx+u*.4,h-u*18.4); g.lineTo(cx-u*.7,h-u*17.1); g.closePath(); g.fill();
+  g.fillStyle='#a7a091'; for(let i=0;i<4;i++) g.fillRect(cx-u*.2,h-u*(20.5-i*4.2),u*.4,u*.65);
+
+  g.restore();
+}
 function buildSprites(){
-  const w=Math.max(8,Math.round(PW*TS*DPR)), h=Math.max(16,Math.round(PH*TS*DPR));
-  const cw=w/8, ch=h/16;
-  for(const k in SPRITES){
+  const w=Math.max(22,Math.round(PW*TS*DPR*1.9)), h=Math.max(46,Math.round(PH*TS*DPR*1.9));
+  const poses={
+    idle1:{bob:0,leg:0,arm:.15,tilt:-.01,hood:0,lantern:-.12,glow:.22},
+    idle2:{bob:.35,leg:.05,arm:-.08,tilt:.01,hood:.18,lantern:.18,glow:.26},
+    run1:{bob:.2,leg:-.95,arm:.9,tilt:-.06,hood:-.06,lantern:.7,glow:.26},
+    run2:{bob:-.15,leg:0,arm:0,tilt:0,hood:.04,lantern:-.08,glow:.24},
+    run3:{bob:.28,leg:.95,arm:-.95,tilt:.06,hood:-.04,lantern:-.7,glow:.29},
+    jump:{bob:-.8,leg:.32,arm:-.18,tilt:.02,hood:-.18,lantern:-.32,glow:.3},
+    fall:{bob:.45,leg:-.18,arm:.28,tilt:.05,hood:.2,lantern:.45,glow:.33}
+  };
+  for(const [k,pose] of Object.entries(poses)){
     const cn=document.createElement('canvas'); cn.width=w; cn.height=h;
-    const g=cn.getContext('2d'); const rows=SPRITES[k];
-    for(let y=0;y<16;y++) for(let x=0;x<8;x++){
-      const c=rows[y][x]; if(c==='.') continue;
-      g.fillStyle=PAL[c];
-      g.fillRect(Math.floor(x*cw),Math.floor(y*ch),Math.ceil(cw),Math.ceil(ch));
-    }
-    SPR[k]=cn;
+    const g=cn.getContext('2d'); g.imageSmoothingEnabled=true;
+    drawHeroAsset(g,w,h,pose); SPR[k]=cn;
   }
 }
 function resize(){
   const availW=Math.min(window.innerWidth,520), availH=window.innerHeight*0.60;
   TS=Math.floor(Math.min(availW/FW,availH/FH));
-  DPR=Math.min(window.devicePixelRatio||1,2);
+  // Performance mode: render at 1x even on Retina screens.
+  DPR=1;
   cv.style.width=(TS*FW)+'px'; cv.style.height=(TS*FH)+'px';
   cv.width=TS*FW*DPR; cv.height=TS*FH*DPR;
   ctx.setTransform(DPR,0,0,DPR,0,0);
@@ -146,10 +313,15 @@ let grid=[];
 function blank(w){ grid=[]; for(let y=0;y<FH;y++) grid.push(new Array(w).fill(0)); }
 function fillGround(w){ for(let x=0;x<w;x++) for(let y=GROUND_Y;y<FH;y++) grid[y][x]=1; }
 function carve(a,b){ for(let x=a;x<=b;x++) for(let y=GROUND_Y;y<FH;y++) grid[y][x]=0; }
+function platform(a,b,y=8,v=1){ for(let x=a;x<=b;x++) grid[y][x]=v; }
+function spikeLine(a,b,y=GROUND_Y){ for(let x=a;x<=b;x++) grid[y][x]=7; }
+function crumbleLine(a,b,y=10){ for(let x=a;x<=b;x++) grid[y][x]=5; }
+function carveRow(a,b,y=GROUND_Y){ for(let x=a;x<=b;x++) grid[y][x]=0; }
+function pitSpikes(a,b){ carve(a,b); for(let x=a;x<=b;x++) grid[13][x]=7; }
 
 const LEVELS=[
 {
-  name:'Level 1', width:50, req:1, flag:47.4,
+  name:'Level 1 · THE MOUTH', width:50, req:1, flag:47.4,
   checks:[1,15,24.8,33.5],
   blocks:[{x:4,kind:'coin',id:'L1a'},{x:17,kind:'weight'}],
   rejectToStart:true,
@@ -187,7 +359,7 @@ const LEVELS=[
   }
 },
 {
-  name:'Level 2', width:64, req:4, flag:58.5,
+  name:'Level 2 · FALSE MERCY', width:64, req:4, flag:58.5,
   checks:[1,20,29,42.6],
   blocks:[{x:6,kind:'coin',id:'L2a'},{x:28,kind:'coin',id:'L2b'},{x:40,kind:'coin',id:'L2c'}],
   hidden:{x:30,id:'L2h'},
@@ -263,7 +435,7 @@ const LEVELS=[
       ctx.globalAlpha=0.5; drawGround(X(d.x),Y(d.y),d.w*TS,d.h*TS); ctx.globalAlpha=1;
     }
     const wl=state.wall;
-    if(wl&&!wl.landed) drawGround(X(wl.x),Y(wl.y),TS*3,TS*2);
+    if(wl&&!wl.landed) drawGround(X(wl.x),Y(wl.y),TS*2,TS*2);
   },
   drawFront(){
     for(const sx of this.spikes){    // фальшиві шипи
@@ -287,7 +459,7 @@ const LEVELS=[
   }
 },
 {
-  name:'Level 3', width:82, req:3, flag:78.5,
+  name:'Level 3 · THE LOOP', width:82, req:3, flag:78.5,
   checks:[1,9,21,58,72],
   blocks:[{x:5,kind:'coin',id:'L3a'},
           {x:8,kind:'weight'},                 // виглядає так само. Це не монетка
@@ -349,7 +521,7 @@ const LEVELS=[
   }
 },
 {
-  name:'Level 4', width:72, req:0, flag:62,
+  name:'Level 4 · TURN BACK', width:72, req:0, flag:62,
   checks:[58],
   blocks:[],
   rejectToStart:false,
@@ -391,18 +563,416 @@ const LEVELS=[
     ctx.fillRect(ex,0,Math.max(2,TS*0.14),FH*TS);
     ctx.globalAlpha=1;
   }
+},
+{
+  name:'Level 5 · THE BASEMENT', width:80, req:3, flag:76,
+  checks:[1,18,36,52,69],
+  blocks:[{x:6,kind:'coin',id:'L5a'},{x:34,kind:'coin',id:'L5b'},{x:61,kind:'coin',id:'L5c'},{x:72,kind:'weight'}],
+  rejectToStart:false,
+  build(){
+    blank(this.width); fillGround(this.width);
+    pitSpikes(11,13); carve(26,29); pitSpikes(44,47); carve(63,66);
+    spikeLine(19,21); spikeLine(38,40); spikeLine(54,56);
+    platform(27,28,9); platform(45,46,9); crumbleLine(64,65,10);
+    for(let y=7;y<=10;y++) grid[y][50]=1;
+  },
+  update(dt){
+    if(!T.rotA&&p.onG&&p.x+PW>27&&p.x<29.2&&p.y<9.35){
+      T.rotAT=(T.rotAT||0)+dt;
+      if(T.rotAT>.22){ T.rotA=true; carveRow(27,28,9); state.shake=.34; }
+    }else if(!T.rotA) T.rotAT=0;
+    if(!T.rotB&&p.onG&&p.x+PW>45&&p.x<47.2&&p.y<9.35){
+      T.rotBT=(T.rotBT||0)+dt;
+      if(T.rotBT>.2){ T.rotB=true; carveRow(45,46,9); state.shake=.34; }
+    }else if(!T.rotB) T.rotBT=0;
+    if(!T.shot&&p.x>47){ T.shot=true; state.proj={x:58,y:9.8,vx:-10}; }
+    const pr=state.proj;
+    if(pr){
+      pr.x+=pr.vx*dt;
+      if(p.x+PW>pr.x&&p.x<pr.x+1.2&&p.y+PH>pr.y&&p.y<pr.y+0.7) die();
+      if(pr.x<-2) state.proj=null;
+    }
+    if(!T.rise&&p.x>57.6){
+      T.rise=true; spikeLine(57,59); state.shake=.32;
+      if(p.x+PW>57&&p.x<60&&p.y+PH>GROUND_Y&&p.y<GROUND_Y+1) die();
+    }
+    if(!T.drop&&p.x>69){
+      T.drop=true; state.wall={x:70,y:-4,vy:11,landed:false};
+    }
+    const wl=state.wall;
+    if(wl&&!wl.landed){
+      wl.vy+=GRAV*dt; wl.y+=wl.vy*dt;
+      if(wl.y>=9){ wl.y=9; wl.landed=true; state.shake=.55; platform(70,73,9,4);
+        if(p.x+PW>70&&p.x<74&&p.y+PH>9) die(); }
+    }
+  },
+  onFlag(){
+    if(!T.fakeExit){
+      T.fakeExit=true; p.x=69.5; p.vx=0; p.airVx=0;
+      state.proj={x:77.5,y:9.5,vx:-12}; state.saveMsg=1.35; state.saveTxt='WRONG EXIT'; state.shake=.5;
+      return true;
+    }
+    return false;
+  },
+  drawBack(){ const wl=state.wall;if(wl&&!wl.landed) drawGround(X(wl.x),Y(wl.y),TS*4,TS*2); },
+  drawFront(){ drawProjectile(); }
+},
+{
+  name:'Level 6 · THE CHAPEL', width:90, req:4, flag:86,
+  checks:[1,17,34,52,70],
+  blocks:[{x:5,kind:'coin',id:'L6a'},{x:24,kind:'coin',id:'L6b'},{x:48,kind:'coin',id:'L6c'},{x:76,kind:'coin',id:'L6d'}],
+  bridge:[36,38],
+  rejectToStart:false,
+  build(){
+    blank(this.width); fillGround(this.width);
+    carve(10,13); pitSpikes(28,31); carve(43,46); carve(78,80);
+    spikeLine(18,20);
+    platform(11,12,9); platform(29,30,9); platform(44,45,8); platform(79,80,10);
+    for(let x=39;x<=42;x++) grid[7][x]=1;
+
+    // v11: ВИПРАВЛЕНО САМЕ МІСЦЕ ПІСЛЯ CHECKPOINT x=34.
+    // Старі смертельні шипи x=36..38 прибрані з поверхні.
+    // Над ямою стоїть твердий примарний міст; шипи лишаються тільки глибоко внизу.
+    for(let x=this.bridge[0];x<=this.bridge[1];x++){
+      grid[GROUND_Y][x]=8;
+      grid[GROUND_Y+1][x]=0;
+      grid[GROUND_Y+2][x]=7;
+    }
+
+    // Пізніша ділянка після checkpoint x=52 залишається нормальною землею.
+    for(let x=52;x<=77;x++) for(let y=GROUND_Y;y<FH;y++) grid[y][x]=1;
+  },
+  update(dt){
+    if(!T.altar&&p.onG&&p.x+PW>44&&p.x<46.4&&p.y<8.5){
+      T.altarT=(T.altarT||0)+dt;
+      if(T.altarT>.18){ T.altar=true; carveRow(44,45,8); state.shake=.4; }
+    }else if(!T.altar) T.altarT=0;
+
+    if(!T.bell&&p.x>40){
+      T.bell=true; state.shake=.5; state.saveMsg=1.5; state.saveTxt='THE BELL HEARD YOU';
+    }
+
+    // Саме міст після checkpoint x=34 зникає лише коли герой уже на правому березі.
+    if(!T.bridgeGone&&p.x>40.25){
+      T.bridgeGone=true;
+      for(let x=this.bridge[0];x<=this.bridge[1];x++){
+        grid[GROUND_Y][x]=0;
+        grid[GROUND_Y+1][x]=0;
+        grid[GROUND_Y+2][x]=7;
+      }
+      state.saveMsg=1.35; state.saveTxt='THE BRIDGE FELL BEHIND YOU'; state.shake=.42;
+      state.wall={x:37,y:-4,vy:14,landed:false,kind:'behind'};
+    }
+
+    const wl=state.wall;
+    if(wl&&!wl.landed){
+      wl.vy+=GRAV*dt; wl.y+=wl.vy*dt;
+      if(wl.y>=12){ wl.y=12; wl.landed=true; state.shake=.35; }
+    }
+
+    // Після чекпоінта до наступної пастки снарядів немає.
+    if(T.bell&&p.x<51){
+      T.volley=(T.volley||0)-dt;
+      if(T.volley<=0&&!state.proj){ T.volley=1.8; state.proj={x:p.x+11,y:9.7,vx:-11}; }
+    }else if(p.x>=51){
+      T.volley=.7; state.proj=null;
+    }
+
+    // Окрема пастка після проходу: падає плита перед фінішною секцією.
+    if(!T.crusher&&p.x>82.2){
+      T.crusher=true; state.wall={x:83,y:-4,vy:10,landed:false,kind:'finish'};
+    }
+    if(!T.finishTrap&&p.onG&&p.x+PW>82&&p.x<84.7){
+      T.finishT=(T.finishT||0)+dt;
+      if(T.finishT>.34){ T.finishTrap=true; carve(82,84); state.shake=.42; }
+    }else if(!T.finishTrap) T.finishT=0;
+
+    const pr=state.proj;
+    if(pr){
+      pr.x+=pr.vx*dt;
+      if(p.x+PW>pr.x&&p.x<pr.x+1&&p.y+PH>pr.y&&p.y<pr.y+.8) die();
+      if(pr.x<p.x-13) state.proj=null;
+    }
+  },
+  onFlag(){
+    if(!T.falseBlessing){
+      T.falseBlessing=true; p.x=79.5; p.vx=0; p.airVx=0;
+      carve(82,83); state.weight={delay:.1,x:84,y:-2,vy:15,live:false};
+      state.saveMsg=1.4; state.saveTxt='NO BLESSING'; state.shake=.55;
+      return true;
+    }
+    return false;
+  },
+  drawBack(){
+    const wl=state.wall;
+    if(wl&&!wl.landed) drawGround(X(wl.x),Y(wl.y),TS*2,TS*2);
+  },
+  drawFront(){ drawProjectile(); }
+},
+{
+  name:'Level 7 · THE WARD', width:98, req:4, flag:94,
+  checks:[1,20,39,58,78],
+  blocks:[{x:7,kind:'coin',id:'L7a'},{x:31,kind:'coin',id:'L7b'},{x:57,kind:'coin',id:'L7c'},{x:84,kind:'coin',id:'L7d'}],
+  rejectToStart:false,
+  build(){
+    blank(this.width); fillGround(this.width);
+    pitSpikes(12,15); carve(27,30); pitSpikes(45,49); carve(64,72); pitSpikes(86,89);
+    spikeLine(21,23); spikeLine(36,38); spikeLine(54,56); spikeLine(79,81);
+    platform(28,29,9); platform(46,48,9); crumbleLine(65,71,10); platform(87,88,9);
+    for(let x=40;x<=44;x++) grid[8][x]=1;
+  },
+  update(dt){
+    if(!T.sickBed&&p.onG&&p.x+PW>58&&p.x<61.8){
+      T.sickT=(T.sickT||0)+dt;
+      if(T.sickT>.24){ T.sickBed=true; carve(58,61); state.shake=.42; }
+    }else if(!T.sickBed) T.sickT=0;
+    if(!T.bridgeFall&&p.onG&&p.x+PW>87&&p.x<89.4&&p.y<9.35){
+      T.bridgeT=(T.bridgeT||0)+dt;
+      if(T.bridgeT>.18){ T.bridgeFall=true; carveRow(87,88,9); state.shake=.36; }
+    }else if(!T.bridgeFall) T.bridgeT=0;
+    if(p.x>18){
+      T.dark=(T.dark||0)+dt;
+      T.volley=(T.volley||0)-dt;
+      if(T.volley<=0&&!state.proj){ T.volley=Math.max(.9,1.7-LI*.05); state.proj={x:p.x+10,y:8.9+((Math.floor(T.dark*3)%2)*1.1),vx:-12}; }
+    }
+    const pr=state.proj;
+    if(pr){ pr.x+=pr.vx*dt;
+      if(p.x+PW>pr.x&&p.x<pr.x+1&&p.y+PH>pr.y&&p.y<pr.y+.9) die();
+      if(pr.x<p.x-12) state.proj=null;
+    }
+  },
+  drawFront(){ drawProjectile(); if(T.dark){ctx.globalAlpha=.08+.06*Math.sin(T.dark*9);ctx.fillStyle='#b72327';ctx.fillRect(0,0,FW*TS,FH*TS);ctx.globalAlpha=1;} }
+},
+{
+  name:'Level 8 · THE SHAFT', width:106, req:5, flag:102,
+  checks:[1,18,36,55,80,98],
+  blocks:[{x:5,kind:'coin',id:'L8a'},{x:26,kind:'coin',id:'L8b'},{x:45,kind:'coin',id:'L8c'},{x:74,kind:'coin',id:'L8d'},{x:96,kind:'coin',id:'L8e'}],
+  // Усі поверхневі шипи цього рівня тепер спочатку накриті примарними мостами.
+  // Це прибирає неможливі стрибки, але міст обвалюється вже позаду героя.
+  bridges:[[19,21],[39,41],[57,59],[76,78],[94,95]],
+  rejectToStart:false,
+  build(){
+    blank(this.width); fillGround(this.width);
+    carve(10,13); pitSpikes(29,33); carve(47,51); pitSpikes(66,70); carve(84,89);
+    platform(11,12,9); crumbleLine(30,32,9); platform(48,50,8); crumbleLine(67,69,10); platform(85,87,9);
+    for(let x=42;x<=46;x++) grid[7][x]=1;
+    for(let x=79;x<=83;x++) grid[8][x]=6;
+
+    // v14: мости ставляться безпосередньо в геометрію рівня.
+    for(const [a,b] of this.bridges){
+      for(let x=a;x<=b;x++){
+        grid[GROUND_Y][x]=8;
+        grid[GROUND_Y+1][x]=0;
+        grid[GROUND_Y+2][x]=7;
+      }
+    }
+  },
+  update(dt){
+    if(!T.falseAltar&&p.onG&&p.x+PW>48&&p.x<50.8&&p.y<8.45){
+      T.falseAltarT=(T.falseAltarT||0)+dt;
+      if(T.falseAltarT>.16){ T.falseAltar=true; carveRow(48,50,8); state.shake=.38; }
+    }else if(!T.falseAltar) T.falseAltarT=0;
+
+    if(!T.l8BridgeGone) T.l8BridgeGone=new Set();
+
+    // Не скидаємо вантажі, поки герой заходить на будь-який активний міст.
+    const crossingSafe=this.bridges.some(([a,b])=>{
+      const key=a+':'+b;
+      return !T.l8BridgeGone.has(key)&&p.x>=a-3&&p.x<=b+3;
+    });
+    if(crossingSafe&&state.weight) state.weight=null;
+    if(!T.rain&&p.x>35){T.rain=true;T.dropT=.6;}
+    if(T.rain&&!crossingSafe){
+      T.dropT-=dt;
+      if(T.dropT<=0&&!state.weight){
+        T.dropT=1.55; state.weight={delay:0,x:p.x+2.2,y:-1.7,vy:13,live:true};
+      }
+    }
+
+    // Кожен міст падає лише після того, як герой уже повністю опинився праворуч.
+    for(const [a,b] of this.bridges){
+      const key=a+':'+b;
+      if(!T.l8BridgeGone.has(key)&&p.x>b+1.35){
+        T.l8BridgeGone.add(key);
+        for(let x=a;x<=b;x++){
+          grid[GROUND_Y][x]=0;
+          grid[GROUND_Y+1][x]=0;
+          grid[GROUND_Y+2][x]=7;
+        }
+        state.saveMsg=1.05; state.saveTxt='THE BRIDGE FELL BEHIND YOU'; state.shake=.28;
+      }
+    }
+
+    if(!T.shaftDoor&&p.x>63){ T.shaftDoor=true; for(let y=9;y<=10;y++) for(let x=52;x<=53;x++) grid[y][x]=4; }
+    if(!T.lastShelf&&p.onG&&p.x+PW>85&&p.x<88.4&&p.y<9.35){
+      T.lastShelfT=(T.lastShelfT||0)+dt;
+      if(T.lastShelfT>.2){ T.lastShelf=true; carveRow(85,87,9); state.shake=.4; }
+    }else if(!T.lastShelf) T.lastShelfT=0;
+    if(!T.break&&p.onG&&p.x>90){
+      T.bt=(T.bt||0)+dt;
+      if(T.bt>.42){T.break=true;carve(90,92);state.shake=.45;}
+    }
+  },
+  onFlag(){
+    if(!T.fakeLift){
+      T.fakeLift=true; p.x=96; p.vx=0; p.airVx=0;
+      state.weight={delay:.04,x:99,y:-2,vy:17,live:false};
+      state.saveMsg=1.35; state.saveTxt='THE LIFT DESCENDS'; state.shake=.62;
+      return true;
+    }
+    return false;
+  }
+},
+{
+  name:'Level 9 · THE HUNT', width:112, req:5, flag:108,
+  checks:[1,22,43,65,87,101],
+  blocks:[{x:6,kind:'coin',id:'L9a'},{x:29,kind:'coin',id:'L9b'},{x:47,kind:'coin',id:'L9c'},{x:77,kind:'coin',id:'L9d'},{x:99,kind:'coin',id:'L9e'}],
+  rejectToStart:false,
+  build(){
+    blank(this.width); fillGround(this.width);
+    pitSpikes(13,16); carve(32,35); pitSpikes(49,53); carve(69,73); pitSpikes(91,95);
+    spikeLine(23,25); spikeLine(40,42); spikeLine(59,61); spikeLine(80,82); spikeLine(102,104);
+    platform(14,15,9); platform(33,34,9); crumbleLine(50,52,10); platform(70,72,9); crumbleLine(92,94,9);
+  },
+  update(dt){
+    if(!T.snap1&&p.onG&&p.x+PW>33&&p.x<35.2&&p.y<9.35){
+      T.snap1T=(T.snap1T||0)+dt;
+      if(T.snap1T>.16){ T.snap1=true; carveRow(33,34,9); state.shake=.35; }
+    }else if(!T.snap1) T.snap1T=0;
+    if(!T.hunt&&p.x>10){T.hunt=true;T.edge=p.x-10;state.saveMsg=1.4;state.saveTxt='DO NOT LOOK BACK';}
+    if(T.hunt){
+      T.edge+=5.15*dt;
+      if(p.x<T.edge+.65) die();
+    }
+    if(!T.ambush&&p.x>74){ T.ambush=true; state.proj={x:86,y:8.8,vx:-13}; }
+    if(!T.finishBreak&&p.onG&&p.x+PW>105&&p.x<107.4){
+      T.finishBreakT=(T.finishBreakT||0)+dt;
+      if(T.finishBreakT>.22){ T.finishBreak=true; carve(105,106); state.shake=.42; }
+    }else if(!T.finishBreak) T.finishBreakT=0;
+    const pr=state.proj;
+    if(pr){ pr.x+=pr.vx*dt;
+      if(p.x+PW>pr.x&&p.x<pr.x+1&&p.y+PH>pr.y&&p.y<pr.y+.9) die();
+      if(pr.x<p.x-13) state.proj=null; }
+  },
+  drawFront(){
+    drawProjectile();
+    if(!T.hunt)return;
+    const ex=X(T.edge);ctx.globalAlpha=.28;ctx.fillStyle='#6f0a12';ctx.fillRect(0,0,ex,FH*TS);
+    ctx.globalAlpha=.95;ctx.fillStyle='#d22b30';ctx.fillRect(ex-TS*.12,0,TS*.12,FH*TS);ctx.globalAlpha=1;
+  }
+},
+{
+  name:'Level 10 · THE RITUAL', width:134, req:6, flag:130,
+  checks:[1,17,36,57,78,99,116],
+  blocks:[{x:5,kind:'coin',id:'L10a'},{x:27,kind:'coin',id:'L10b'},{x:47,kind:'coin',id:'L10c'},{x:68,kind:'coin',id:'L10d'},{x:94,kind:'coin',id:'L10e'},{x:109,kind:'coin',id:'L10f'},
+          {x:122,kind:'bossRune',id:'WARDEN_RUNE',row:8}],
+  rejectToStart:false,
+  build(){
+    blank(this.width); fillGround(this.width);
+    pitSpikes(11,14); carve(30,34); pitSpikes(50,54); carve(70,75); pitSpikes(91,96); carve(110,114);
+    spikeLine(20,22); spikeLine(39,42); spikeLine(60,63); spikeLine(82,85); spikeLine(102,105);
+    platform(12,13,9); crumbleLine(31,33,10); platform(50,53,9); crumbleLine(71,74,9); platform(92,95,8); crumbleLine(111,113,10);
+    for(let x=44;x<=46;x++) grid[7][x]=1; // v16: балка закінчується до монетки, стрибок більше не блокується
+    for(let x=97;x<=101;x++) grid[8][x]=6;
+    // boss arena
+    for(let x=115;x<=133;x++) for(let y=GROUND_Y;y<FH;y++) grid[y][x]=1;
+    for(let y=7;y<=10;y++) grid[y][132]=4;
+    grid[10][119]=5; grid[10][125]=5; grid[10][128]=5;
+  },
+  onFlag(){
+    if(!T.boss||!T.boss.dead){
+      state.saveMsg=1.25; state.saveTxt='THE WARDEN LIVES'; state.shake=.35;
+      return true;
+    }
+    return false;
+  },
+  update(dt){
+    // v16: платформа біля монетки не зникає під ногами.
+    // Вона обвалюється лише після того, як герой уже дістався правого берега.
+    if(!T.collapseA&&p.x>54.35){
+      T.collapseA=true; carveRow(50,53,9); state.shake=.42;
+      state.saveMsg=.9; state.saveTxt='THE WAY BACK IS GONE';
+    }
+    if(!T.collapseB&&p.onG&&p.x+PW>92&&p.x<95.8&&p.y<8.45){
+      T.collapseBT=(T.collapseBT||0)+dt;
+      if(T.collapseBT>.2){ T.collapseB=true; carveRow(92,95,8); state.shake=.42; }
+    }else if(!T.collapseB) T.collapseBT=0;
+    if(p.x>16&&p.x<115){
+      T.ritual=true; T.dropT=(T.dropT||1.0)-dt;
+      // v15: рідші падіння до арени боса — приблизно раз на 2.2 секунди.
+      if(T.dropT<=0&&!state.weight){ T.dropT=2.2; state.weight={delay:0,x:p.x+1.5+(Math.sin(p.x)*1.5),y:-1.8,vy:15,live:true}; }
+      T.volley=(T.volley||1.1)-dt;
+      if(T.volley<=0&&!state.proj){T.volley=2.0;state.proj={x:p.x+11,y:9.6,vx:-13};}
+    }
+    if(!T.rise&&p.x>103.5){ T.rise=true; spikeLine(106,108); state.shake=.34; }
+    const pr=state.proj;
+    if(pr){pr.x+=pr.vx*dt;if(p.x+PW>pr.x&&p.x<pr.x+1&&p.y+PH>pr.y&&p.y<pr.y+.8)die();if(pr.x<p.x-13)state.proj=null;}
+
+    if(!T.boss&&p.x>116.4){
+      T.boss={hp:5,max:5,x:127,y:4.2,t:0,shotT:.85,dropT:2.0,runeT:0,hitT:0,dead:false,deathT:0};
+      for(let y=7;y<=10;y++) grid[y][116]=4;
+      state.bossShots=[]; state.saveMsg=1.8; state.saveTxt='THE WARDEN AWAKENS'; state.shake=.85;
+    }
+    const b=T.boss;
+    if(b){
+      b.t+=dt; b.hitT=Math.max(0,b.hitT-dt);
+      b.x=127+Math.sin(b.t*1.4)*1.25;
+      b.y=4.05+Math.sin(b.t*2.1)*.55;
+      if(!b.dead){
+        // keep player inside the arena
+        if(p.x<116.25){p.x=116.25;p.vx=0;}
+        b.runeT-=dt;
+        if(b.runeT<=0&&grid[8][122]===3) grid[8][122]=2;
+        const rage=1-b.hp/b.max;
+        b.shotT-=dt;
+        if(b.shotT<=0){
+          b.shotT=Math.max(.42,1.12-rage*.48);
+          const dx=(p.x+PW*.5)-b.x, dy=(p.y+PH*.5)-b.y;
+          const len=Math.hypot(dx,dy)||1, speed=8.2+rage*3.2;
+          state.bossShots.push({x:b.x,y:b.y,vx:dx/len*speed,vy:dy/len*speed,life:5,r:.34});
+        }
+        b.dropT-=dt;
+        if(b.dropT<=0&&!state.weight){
+          // v15: навіть у rage-фазі між падіннями є щонайменше ~1.8 секунди.
+          b.dropT=Math.max(1.8,2.35-rage*.55);
+          state.weight={delay:.08,x:Math.max(117,Math.min(130,p.x+(Math.random()-.5)*2.4)),y:-2,vy:13+rage*4,live:false};
+        }
+        if(b.hp<=2&&!T.bossFloor&&p.onG&&p.x>126){
+          T.bossFloorT=(T.bossFloorT||0)+dt;
+          if(T.bossFloorT>.42){ T.bossFloor=true; carve(126,127); state.shake=.6; }
+        }else if(!T.bossFloor) T.bossFloorT=0;
+      }else{
+        b.deathT+=dt;
+        if(b.deathT<1.1) state.shake=Math.max(state.shake,.18);
+      }
+    }
+  },
+  drawFront(){
+    drawProjectile();
+    if(T.ritual){ctx.globalAlpha=.08+.05*Math.sin(performance.now()/80);ctx.fillStyle='#ff2634';ctx.fillRect(0,0,FW*TS,FH*TS);ctx.globalAlpha=1;}
+    drawBoss();
+  }
 }];
 
 /* ================= стан ================= */
 let LI=0, L=LEVELS[0], T={};
 const state={
-  deaths:0, cp:0, coins:0, req:1, reqKnown:false, got:new Set(),
+  deaths:0, lives:3, bonusLives:new Set(), gameOverPending:false, cp:0, coins:0, req:1, reqKnown:false, got:new Set(),
   hiddenOn:false, flagLock:false,
-  coinFx:null, weight:null, wall:null, proj:null, crumb:[],
-  dead:0, won:false, running:false, shake:0, flash:0, saveMsg:0, saveTxt:'', rejectMsg:0, flags:{}, revealed:new Set()
+  coinFx:null, weight:null, wall:null, proj:null, bossShots:[], crumb:[],
+  deathFx:[], bloodFx:[], dead:0, won:false, running:false, shake:0, flash:0, saveMsg:0, saveTxt:'', rejectMsg:0, flags:{}, revealed:new Set()
 };
-const p={x:1,y:GROUND_Y-PH,vx:0,vy:0,onG:false,coyote:0,buf:0,face:1,anim:0,airVx:0};
+const p={x:1,y:GROUND_Y-PH,vx:0,vy:0,onG:false,coyote:0,buf:0,face:1,anim:0,airVx:0,touchJump:false};
 
+function updateLives(){
+  lnum.textContent=BETA_TEST_MODE?'∞':state.lives;
+  lbox.title=BETA_TEST_MODE?'BETA TEST: infinite lives':'Lives remaining';
+  lbox.classList.add('bump'); setTimeout(()=>lbox.classList.remove('bump'),110);
+}
+function resetRun(){
+  state.deaths=0; state.lives=3; state.bonusLives=new Set(); state.gameOverPending=false;
+  dnum.textContent='0'; updateLives();
+}
 function buildGrid(){
   L.build();
   for(const b of L.blocks){
@@ -411,6 +981,29 @@ function buildGrid(){
     else grid[r][b.x]=2;
   }
   if(L.hidden&&state.hiddenOn) grid[8][L.hidden.x]=state.got.has(L.hidden.id)?3:2;
+  enforceLevel6SafeBridge();
+  enforceLevel8SafeBridges();
+}
+function enforceLevel6SafeBridge(){
+  if(LI!==5||T.bridgeGone) return;
+  for(let x=36;x<=38;x++){
+    grid[GROUND_Y][x]=8;
+    grid[GROUND_Y+1][x]=0;
+    grid[GROUND_Y+2][x]=7;
+  }
+}
+function enforceLevel8SafeBridges(){
+  if(LI!==7||!L.bridges) return;
+  if(!T.l8BridgeGone) T.l8BridgeGone=new Set();
+  for(const [a,b] of L.bridges){
+    const key=a+':'+b;
+    if(T.l8BridgeGone.has(key)) continue;
+    for(let x=a;x<=b;x++){
+      grid[GROUND_Y][x]=8;
+      grid[GROUND_Y+1][x]=0;
+      grid[GROUND_Y+2][x]=7;
+    }
+  }
 }
 function resetLife(){
   T={}; buildGrid();
@@ -419,8 +1012,9 @@ function resetLife(){
     cnum.textContent=state.coins;
     grid[8][L.hidden.x]=2;
   }
-  state.coinFx=null; state.weight=null; state.wall=null; state.proj=null; state.crumb=[];
-  state.dead=0; state.won=false; state.saveMsg=0; state.rejectMsg=0; state.flagLock=false;
+  state.coinFx=null; state.weight=null; state.wall=null; state.proj=null; state.bossShots=[]; state.crumb=[];
+  state.deathFx=[]; state.bloodFx=[];
+  state.dead=0; state.won=false; state.gameOverPending=false; state.saveMsg=0; state.rejectMsg=0; state.flagLock=false;
   p.x=L.checks[state.cp]; p.y=GROUND_Y-PH;
   p.vx=0; p.vy=0; p.airVx=0; p.onG=true; p.face=1; p.buf=0; p.coyote=0;
 }
@@ -434,55 +1028,87 @@ function loadLevel(i){
 
 /* ================= ввід ================= */
 const keys={l:false,r:false};
+const keyboardKeys={l:false,r:false};
+const padKeys={l:false,r:false};
 const padL=document.getElementById('padL'),padR=document.getElementById('padR'),
       padJ=document.getElementById('padJ');
-const touches=new Map();
-function readTouches(){
-  keys.l=false; keys.r=false;
-  const w=window.innerWidth;
-  for(const t of touches.values()){
-    if(t.x<w/2){ if(t.x<w/4) keys.l=true; else keys.r=true; }
-  }
-  padL.classList.toggle('hit',keys.l); padR.classList.toggle('hit',keys.r);
+
+function syncMoveKeys(){
+  keys.l=keyboardKeys.l||padKeys.l;
+  keys.r=keyboardKeys.r||padKeys.r;
+  // Якщо одночасно затиснуто обидва напрямки, герой стоїть на місці.
+  padL.classList.toggle('hit',padKeys.l);
+  padR.classList.toggle('hit',padKeys.r);
 }
-function onStart(e){
-  if(!ov.classList.contains('hidden')) return;
-  for(const t of e.changedTouches){
-    touches.set(t.identifier,{x:t.clientX});
-    if(t.clientX>=window.innerWidth/2){ p.buf=BUFFER; padJ.classList.add('hit'); }
-  }
-  readTouches(); e.preventDefault();
+function setPadDirection(side,on){
+  padKeys[side]=on;
+  syncMoveKeys();
 }
-function onMove(e){
-  if(!ov.classList.contains('hidden')) return;
-  for(const t of e.changedTouches) if(touches.has(t.identifier)) touches.get(t.identifier).x=t.clientX;
-  readTouches(); e.preventDefault();
-}
-function onEnd(e){
-  if(!ov.classList.contains('hidden')){ touches.clear(); return; }
-  for(const t of e.changedTouches) touches.delete(t.identifier);
-  let anyR=false; for(const t of touches.values()) if(t.x>=window.innerWidth/2) anyR=true;
-  if(!anyR) padJ.classList.remove('hit');
-  readTouches(); e.preventDefault();
-}
-document.addEventListener('touchstart',onStart,{passive:false});
-document.addEventListener('touchmove',onMove,{passive:false});
-document.addEventListener('touchend',onEnd,{passive:false});
-document.addEventListener('touchcancel',onEnd,{passive:false});
-document.addEventListener('mousedown',e=>{
+function requestJump(){
   if(!state.running) return;
-  if(e.clientX>=window.innerWidth/2) p.buf=BUFFER;
-  else { touches.set(-1,{x:e.clientX}); readTouches(); }
-});
-document.addEventListener('mouseup',()=>{ touches.delete(-1); readTouches(); });
+  p.buf=BUFFER;               // лише вертикальний імпульс
+  padJ.classList.add('hit');
+}
+function releaseJump(){ padJ.classList.remove('hit'); }
+
+function bindPointerHold(el,onPress,onRelease){
+  const active=new Set();
+  const down=e=>{
+    if(!state.running) return;
+    if(e.cancelable) e.preventDefault();
+    e.stopPropagation();
+    active.add(e.pointerId);
+    try{ el.setPointerCapture(e.pointerId); }catch(_){ }
+    onPress();
+  };
+  const up=e=>{
+    if(e.cancelable) e.preventDefault();
+    e.stopPropagation();
+    active.delete(e.pointerId);
+    if(active.size===0) onRelease();
+  };
+  el.addEventListener('pointerdown',down,{passive:false});
+  el.addEventListener('pointerup',up,{passive:false});
+  el.addEventListener('pointercancel',up,{passive:false});
+  el.addEventListener('lostpointercapture',up,{passive:false});
+
+  // Touch-обробники ставимо ЗАВЖДИ: деякі iOS preview мають PointerEvent,
+  // але не передають pointer-події кнопкам локального HTML.
+  el.addEventListener('touchstart',e=>{
+    if(!state.running) return;
+    if(e.cancelable) e.preventDefault();
+    e.stopPropagation();
+    onPress();
+  },{passive:false});
+  const touchUp=e=>{
+    if(e.cancelable) e.preventDefault();
+    e.stopPropagation();
+    onRelease();
+  };
+  el.addEventListener('touchend',touchUp,{passive:false});
+  el.addEventListener('touchcancel',touchUp,{passive:false});
+}
+
+bindPointerHold(padL,()=>setPadDirection('l',true),()=>setPadDirection('l',false));
+bindPointerHold(padR,()=>setPadDirection('r',true),()=>setPadDirection('r',false));
+bindPointerHold(padJ,requestJump,releaseJump);
+for(const el of [padL,padR,padJ]){
+  el.addEventListener('contextmenu',e=>e.preventDefault());
+  el.addEventListener('dragstart',e=>e.preventDefault());
+}
+
+
 addEventListener('keydown',e=>{
-  if(e.code==='ArrowLeft'||e.code==='KeyA') keys.l=true;
-  if(e.code==='ArrowRight'||e.code==='KeyD') keys.r=true;
-  if(e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW'){ p.buf=BUFFER; e.preventDefault(); }
+  if(e.code==='ArrowLeft'||e.code==='KeyA'){ keyboardKeys.l=true; syncMoveKeys(); }
+  if(e.code==='ArrowRight'||e.code==='KeyD'){ keyboardKeys.r=true; syncMoveKeys(); }
+  if(e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW'){
+    p.buf=BUFFER;
+    e.preventDefault();
+  }
 });
 addEventListener('keyup',e=>{
-  if(e.code==='ArrowLeft'||e.code==='KeyA') keys.l=false;
-  if(e.code==='ArrowRight'||e.code==='KeyD') keys.r=false;
+  if(e.code==='ArrowLeft'||e.code==='KeyA'){ keyboardKeys.l=false; syncMoveKeys(); }
+  if(e.code==='ArrowRight'||e.code==='KeyD'){ keyboardKeys.r=false; syncMoveKeys(); }
 });
 
 /* ================= колізії ================= */
@@ -490,7 +1116,7 @@ function solid(tx,ty){
   if(tx<0||tx>=L.width) return tx<0;
   if(ty<0||ty>=FH) return false;
   const v=grid[ty][tx];
-  return v===1||v===2||v===3||v===4||v===5||v===6||v===7;
+  return v===1||v===2||v===3||v===4||v===5||v===6||v===7||v===8;
 }
 function collideX(){
   const y0=Math.floor(p.y+0.001), y1=Math.floor(p.y+PH-0.001);
@@ -557,6 +1183,8 @@ function hitBlock(tx,ty){
   const b=L.blocks.find(b=>b.x===tx&&(b.row||8)===ty);
   if(b&&b.kind==='coin'){
     state.coinFx={x:tx+0.5,y:ty-0.2,life:0.8}; giveCoin(b.id);
+  }else if(b&&b.kind==='bossRune'){
+    hitBossRune(tx,ty);
   }else if(L.hidden&&L.hidden.x===tx){
     state.coinFx={x:tx+0.5,y:ty-0.2,life:0.8}; giveCoin(L.hidden.id);
     if(L.onHiddenCoin) L.onHiddenCoin.call(L);
@@ -564,10 +1192,50 @@ function hitBlock(tx,ty){
     state.weight={delay:0.40,x:0,y:-2,vy:0,live:false};
   }
 }
+function spawnDeathFx(){
+  state.deathFx=[];
+  const cx=p.x+PW*.5, cy=p.y+PH*.48;
+  for(let i=0;i<12;i++){
+    const a=Math.random()*Math.PI*2, sp=2.2+Math.random()*8.5;
+    state.deathFx.push({x:cx,y:cy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-3.5,life:.55+Math.random()*.7,max:1.25,r:.045+Math.random()*.09,red:i%3!==0});
+  }
+  for(let i=0;i<13;i++) state.bloodFx.push({x:cx+(Math.random()-.5)*.8,y:GROUND_Y-.04,vx:(Math.random()-.5)*1.7,life:1.5+Math.random()*2,r:.05+Math.random()*.14});
+}
+function updateEffects(dt){
+  for(let i=state.deathFx.length-1;i>=0;i--){
+    const f=state.deathFx[i]; f.life-=dt; f.vy+=GRAV*.26*dt; f.x+=f.vx*dt; f.y+=f.vy*dt;
+    if(f.life<=0) state.deathFx.splice(i,1);
+  }
+  for(let i=state.bloodFx.length-1;i>=0;i--){
+    const f=state.bloodFx[i]; f.life-=dt; f.x+=f.vx*dt; f.vx*=Math.pow(.08,dt);
+    if(f.life<=0) state.bloodFx.splice(i,1);
+  }
+  for(let i=state.bossShots.length-1;i>=0;i--){
+    const q=state.bossShots[i]; q.life-=dt; q.x+=q.vx*dt; q.y+=q.vy*dt;
+    if(q.x<p.x+PW&&q.x+q.r>p.x&&q.y<p.y+PH&&q.y+q.r>p.y) die();
+    if(q.life<=0||q.x<0||q.x>L.width||q.y<0||q.y>FH+1) state.bossShots.splice(i,1);
+  }
+}
+function hitBossRune(tx,ty){
+  const b=T.boss;
+  if(!b||b.dead){ grid[ty][tx]=2; return; }
+  if(b.runeT>0){ grid[ty][tx]=2; return; }
+  b.hp=Math.max(0,b.hp-1); b.runeT=1.15; b.hitT=.28;
+  state.shake=.68; state.flash=.16; state.saveMsg=.85; state.saveTxt=b.hp?'WARDEN '+b.hp+' / '+b.max:'THE WARDEN FALLS';
+  for(let i=0;i<18;i++) state.deathFx.push({x:b.x,y:b.y,vx:(Math.random()-.5)*10,vy:(Math.random()-.5)*8,life:.5+Math.random()*.5,max:1,r:.04+Math.random()*.08,red:true});
+  if(b.hp<=0){
+    b.dead=true; b.deathT=0; state.bossShots=[]; state.weight=null; grid[8][122]=3;
+    for(let y=7;y<=10;y++) grid[y][132]=0;
+  }
+}
 function die(){
   if(state.dead>0||state.won) return;
-  state.dead=0.28; state.deaths++; state.shake=0.35; state.flash=0.25;
-  dnum.textContent=state.deaths;
+  spawnDeathFx();
+  state.dead=0.88; state.deaths++;
+  if(!BETA_TEST_MODE) state.lives=Math.max(0,state.lives-1);
+  state.gameOverPending=!BETA_TEST_MODE&&state.lives<=0;
+  state.shake=0.72; state.flash=0.46;
+  dnum.textContent=state.deaths; updateLives();
   dbox.classList.add('bump'); setTimeout(()=>dbox.classList.remove('bump'),100);
 }
 
@@ -585,15 +1253,32 @@ function tryFlag(){
     p.vx=0; p.vy=0; p.airVx=0; p.onG=true;
   }else state.flagLock=true;
 }
+function gameOver(){
+  state.running=false; state.won=true;
+  ovT.textContent='NO LIVES LEFT';
+  ovS.innerHTML='The nightmare has taken everything.<br><br>You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>Restarting means returning to Level 1.';
+  ovB.textContent='Begin Again'; ovB.dataset.act='restart'; setBetaPickerVisible(true); ov.classList.remove('hidden');
+}
 function win(){
   state.won=true; state.running=false;
   const last=LI>=LEVELS.length-1;
-  ovT.textContent=last?'THE END':(L.name.toUpperCase()+' CLEARED');
+  let bonus='';
+  if(!state.bonusLives.has(LI)){
+    state.bonusLives.add(LI);
+    // v17: перед фінальним Level 10 гравець отримує великий запас життів.
+    const lifeReward=(LI===8)?10:1;
+    state.lives+=lifeReward;
+    updateLives();
+    bonus='<br><b style="color:var(--blood-bright)">+'+lifeReward+' '+(lifeReward===1?'LIFE':'LIVES')+'</b>';
+    if(LI===8) bonus+='<br><span style="color:var(--bone-dim)">FINAL LEVEL PREPARATION</span>';
+  }
+  ovT.textContent=last?'THE NIGHTMARE ENDS':(L.name.toUpperCase()+' CLEARED');
   ovS.innerHTML=(state.req>0?('Coins: <b style="color:var(--gold)">'+state.coins+' / '+state.req+'</b><br>'):'')+
-    'Total deaths: <b style="color:var(--blood)">'+state.deaths+'</b>'+
-    (last?'<br><br>The last one does not count.<br>It counts.':'<br><br>It gets worse.');
+    'Lives: <b style="color:var(--blood-bright)">'+(BETA_TEST_MODE?'∞ · BETA':state.lives)+'</b><br>Total deaths: <b style="color:var(--blood)">'+state.deaths+'</b>'+bonus+
+    (last?'<br><br>You survived all ten rooms.':'<br><br>The next room is worse.');
   ovB.textContent=last?'Restart':'Next';
   ovB.dataset.act=last?'restart':'next';
+  setBetaPickerVisible(last);
   ov.classList.remove('hidden');
 }
 
@@ -603,9 +1288,11 @@ function step(dt){
   if(state.flash>0) state.flash-=dt;
   if(state.saveMsg>0) state.saveMsg-=dt;
   if(state.rejectMsg>0) state.rejectMsg-=dt;
-  if(state.dead>0){ state.dead-=dt; if(state.dead<=0) resetLife(); return; }
+  updateEffects(dt);
+  if(state.dead>0){ state.dead-=dt; if(state.dead<=0){ if(state.gameOverPending) gameOver(); else resetLife(); } return; }
   if(state.won) return;
 
+  enforceLevel8SafeBridges();
   const wasOnG=p.onG;
 
   let dir=(keys.r?1:0)-(keys.l?1:0);
@@ -617,6 +1304,7 @@ function step(dt){
   if(p.buf>0) p.buf-=dt;
   if(p.coyote>0) p.coyote-=dt;
   if(p.buf>0&&(p.onG||p.coyote>0)){
+    // Стрибок завжди вертикальний. Горизонталь задається тільки LEFT/RIGHT.
     p.vy=-JUMP_V; p.onG=false; p.coyote=0; p.buf=0; p.airVx=p.vx;
   }
 
@@ -629,6 +1317,7 @@ function step(dt){
   if(p.onG&&p.vx!==0) p.anim+=dt; else if(p.onG) p.anim=0;
 
   if(L.update) L.update.call(L,dt,wasOnG);
+  enforceLevel6SafeBridge();
 
   // крихкі платформи
   for(let i=state.crumb.length-1;i>=0;i--){
@@ -667,19 +1356,118 @@ function step(dt){
 /* ================= рендер ================= */
 let cam=0;
 const X=t=>(t-cam)*TS, Y=t=>t*TS;
+const THEMES=[
+  ['#0b1017','#22151a','#7d1820'],['#090d13','#171a21','#6d141b'],['#0b0b10','#21161d','#892029'],
+  ['#080b10','#17141a','#7b1018'],['#090b0f','#1d1619','#74131a'],['#070a0e','#1a1820','#8f2023'],
+  ['#080a0e','#171720','#68141e'],['#08090d','#1b151d','#8d1720'],['#07080c','#1a1117','#a11823'],['#05070a','#210e14','#ba1b27']
+];
 function drawGround(px,py,pw,ph){
-  ctx.fillStyle='#DED6C4'; ctx.fillRect(px,py,pw,ph);
-  ctx.fillStyle='#0E1319'; ctx.fillRect(px,py+TS*0.16,pw,Math.max(1,TS*0.05));
+  ctx.fillStyle='#b8b09f'; ctx.fillRect(px,py,pw,ph);
+  ctx.fillStyle='#e5decc'; ctx.fillRect(px,py,pw,Math.max(2,TS*.10));
+  ctx.fillStyle='#403c38'; ctx.fillRect(px,py+TS*.16,pw,Math.max(1,TS*.055));
+  ctx.globalAlpha=.22;ctx.fillStyle='#15161a';
+  for(let x=px+TS*.3;x<px+pw;x+=TS){ctx.fillRect(x,py+TS*.45,TS*.42,Math.max(1,TS*.06));ctx.fillRect(x-TS*.18,py+TS*.74,TS*.26,Math.max(1,TS*.05));}
+  ctx.globalAlpha=1;
+}
+function drawProjectile(){
+  const pr=state.proj;if(!pr)return;const px=X(pr.x),py=Y(pr.y);
+  ctx.save();ctx.translate(px+TS*.5,py+TS*.45);ctx.rotate(performance.now()/120);
+  ctx.fillStyle='#d8d1c2';
+  for(let i=0;i<8;i++){ctx.rotate(Math.PI/4);ctx.beginPath();ctx.moveTo(0,-TS*.58);ctx.lineTo(TS*.11,-TS*.26);ctx.lineTo(-TS*.11,-TS*.26);ctx.fill();}
+  ctx.fillStyle='#3b0c12';ctx.beginPath();ctx.arc(0,0,TS*.23,0,7);ctx.fill();ctx.restore();
+}
+function drawHorrorBackdrop(){
+  const th=THEMES[Math.min(LI,THEMES.length-1)], now=performance.now()/1000;
+  const g=ctx.createLinearGradient(0,0,0,FH*TS);g.addColorStop(0,th[0]);g.addColorStop(.62,th[1]);g.addColorStop(1,'#07080b');
+  ctx.fillStyle=g;ctx.fillRect(0,0,FW*TS,FH*TS);
+  // Moon / eclipse
+  const mx=FW*TS*(.72-(LI%3)*.16),my=TS*(2.05+(LI%2)*.35),mr=TS*(1.25+.08*LI);
+  ctx.globalAlpha=.72;ctx.fillStyle='#d7cdb8';ctx.beginPath();ctx.arc(mx,my,mr,0,7);ctx.fill();
+  ctx.fillStyle=th[0];ctx.beginPath();ctx.arc(mx+mr*.38,my-mr*.12,mr*.92,0,7);ctx.fill();ctx.globalAlpha=1;
+  // Distant ruined skyline
+  ctx.fillStyle='#0b0b10';
+  for(let i=-1;i<11;i++){
+    const bx=((i*TS*3.1-cam*TS*.12)%(FW*TS+TS*4))-TS*2;
+    const h=TS*(1.5+((i*17+LI*9)%4));ctx.fillRect(bx,FH*TS-h-TS*2.2,TS*(1.3+(i%2)*.4),h);
+    if(i%3===0){ctx.beginPath();ctx.moveTo(bx-TS*.2,FH*TS-h-TS*2.2);ctx.lineTo(bx+TS*.7,FH*TS-h-TS*3.1);ctx.lineTo(bx+TS*1.5,FH*TS-h-TS*2.2);ctx.fill();}
+  }
+  // Dead trees
+  ctx.strokeStyle='#171216';ctx.lineCap='round';
+  for(let i=0;i<4;i++){
+    const x=((i*TS*4.7-cam*TS*.22+LI*37)%(FW*TS+TS*5))-TS*2,y=GROUND_Y*TS;
+    ctx.lineWidth=Math.max(2,TS*.14);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+TS*.2,y-TS*(2.2+(i%3)*.45));ctx.stroke();
+    ctx.lineWidth=Math.max(1,TS*.08);ctx.beginPath();ctx.moveTo(x+TS*.13,y-TS*1.25);ctx.lineTo(x-TS*.75,y-TS*2.05);ctx.moveTo(x+TS*.18,y-TS*1.65);ctx.lineTo(x+TS*.95,y-TS*2.45);ctx.moveTo(x+TS*.08,y-TS*1.95);ctx.lineTo(x-TS*.45,y-TS*2.7);ctx.stroke();
+  }
+  // Hanging chains
+  ctx.strokeStyle='#3b3437';ctx.lineWidth=Math.max(1,TS*.06);ctx.globalAlpha=.55;
+  for(let i=0;i<2;i++){const x=TS*(3+i*7.2)-((cam*TS*.08)%(TS*4.3));ctx.beginPath();for(let y=0;y<TS*(2.2+(i%2));y+=TS*.24){ctx.ellipse(x+Math.sin(y*.1)*TS*.05,y,TS*.07,TS*.13,0,0,7);}ctx.stroke();}
+  // Туман малюється нижче в drawAtmosphere: максимум дві смуги на кадр.
+  ctx.globalAlpha=1;
+}
+function drawBoss(){
+  const b=T.boss;if(!b)return;
+  const bx=X(b.x),by=Y(b.y),pulse=1+Math.sin(b.t*5)*.045;
+  ctx.save();ctx.translate(bx,by);ctx.scale(pulse,pulse);
+  const alpha=b.dead?Math.max(0,1-b.deathT*.75):1;ctx.globalAlpha=alpha;
+  const aura=ctx.createRadialGradient(0,0,TS*.5,0,0,TS*3.1);aura.addColorStop(0,b.hitT>0?'rgba(255,235,210,.75)':'rgba(187,20,32,.42)');aura.addColorStop(1,'rgba(80,0,8,0)');ctx.fillStyle=aura;ctx.fillRect(-TS*3.3,-TS*3.3,TS*6.6,TS*6.6);
+  ctx.fillStyle='#0b0d12';ctx.beginPath();ctx.ellipse(0,TS*.2,TS*1.7,TS*2.4,0,0,7);ctx.fill();
+  ctx.fillStyle='#231219';ctx.beginPath();ctx.moveTo(-TS*1.5,TS*.2);ctx.lineTo(-TS*2.45,TS*2.25);ctx.lineTo(-TS*.7,TS*1.35);ctx.lineTo(0,TS*2.75);ctx.lineTo(TS*.7,TS*1.35);ctx.lineTo(TS*2.45,TS*2.25);ctx.lineTo(TS*1.5,TS*.2);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='#9b1c27';ctx.lineWidth=Math.max(2,TS*.11);ctx.beginPath();ctx.moveTo(-TS*.8,-TS*1.35);ctx.lineTo(-TS*1.65,-TS*2.5);ctx.moveTo(TS*.8,-TS*1.35);ctx.lineTo(TS*1.65,-TS*2.5);ctx.stroke();
+  ctx.fillStyle='#d3c7b7';ctx.beginPath();ctx.ellipse(0,-TS*.55,TS*.88,TS*1.05,0,0,7);ctx.fill();
+  ctx.fillStyle='#0a0b0e';ctx.beginPath();ctx.ellipse(0,-TS*.42,TS*.7,TS*.78,0,0,7);ctx.fill();
+  ctx.fillStyle='#f02d36';ctx.fillRect(-TS*.43,-TS*.6,TS*.25,TS*.12);ctx.fillRect(TS*.18,-TS*.6,TS*.25,TS*.12);
+  ctx.strokeStyle='#d3c7b7';ctx.lineWidth=Math.max(1,TS*.08);for(let i=-2;i<=2;i++){ctx.beginPath();ctx.moveTo(i*TS*.28,-TS*.1);ctx.lineTo(i*TS*.22,TS*.52);ctx.stroke();}
+  ctx.globalAlpha=alpha;ctx.restore();
+
+  if(!b.dead){
+    const w=TS*5.8,h=Math.max(5,TS*.26),x=FW*TS/2-w/2,y=TS*.55;
+    ctx.fillStyle='rgba(0,0,0,.72)';ctx.fillRect(x-3,y-3,w+6,h+6);
+    ctx.fillStyle='#3b1118';ctx.fillRect(x,y,w,h);
+    ctx.fillStyle='#c12932';ctx.fillRect(x,y,w*(b.hp/b.max),h);
+    ctx.fillStyle='#e5dccc';ctx.font='700 '+Math.round(TS*.34)+'px Arial';ctx.textAlign='center';ctx.textBaseline='bottom';ctx.fillText('THE WARDEN',FW*TS/2,y-TS*.12);
+  }
+  if(!b.dead&&grid[8][122]===2){
+    const rx=X(122)+TS*.5,ry=Y(8)+TS*.5;ctx.globalAlpha=.45+.35*Math.sin(performance.now()/120);ctx.strokeStyle='#ff3641';ctx.lineWidth=Math.max(2,TS*.1);ctx.beginPath();ctx.arc(rx,ry,TS*.62,0,7);ctx.stroke();ctx.globalAlpha=1;
+  }
+  for(const q of state.bossShots){
+    const x=X(q.x),y=Y(q.y);ctx.save();ctx.translate(x,y);ctx.rotate(performance.now()/90);
+    const g=ctx.createRadialGradient(0,0,0,0,0,TS*.48);g.addColorStop(0,'#ffe2c3');g.addColorStop(.25,'#e92d39');g.addColorStop(1,'rgba(80,0,10,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,TS*.48,0,7);ctx.fill();ctx.fillStyle='#1a080c';ctx.beginPath();ctx.arc(0,0,TS*.16,0,7);ctx.fill();ctx.restore();
+  }
+}
+function drawDeathFx(){
+  for(const f of state.bloodFx){ctx.globalAlpha=Math.min(.75,f.life*.5);ctx.fillStyle='#6f0b13';ctx.beginPath();ctx.ellipse(X(f.x),Y(f.y),TS*f.r*2.4,TS*f.r*.45,0,0,7);ctx.fill();}
+  for(const f of state.deathFx){ctx.globalAlpha=Math.min(1,f.life*1.8);ctx.fillStyle=f.red?'#a91520':'#d8d0c2';ctx.beginPath();ctx.arc(X(f.x),Y(f.y),TS*f.r,0,7);ctx.fill();}
+  ctx.globalAlpha=1;
+}
+function drawLanternLight(){
+  if(state.dead>0)return;
+  const hx=X(p.x+PW*.64),hy=Y(p.y+PH*.58),r=TS*(3.4+Math.sin(performance.now()/145)*.18);
+  ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=.48;
+  const g=ctx.createRadialGradient(hx,hy,TS*.12,hx,hy,r);g.addColorStop(0,'rgba(255,219,143,.72)');g.addColorStop(.22,'rgba(220,151,60,.27)');g.addColorStop(1,'rgba(88,18,10,0)');ctx.fillStyle=g;ctx.fillRect(hx-r,hy-r,r*2,r*2);ctx.restore();
+}
+function drawAtmosphere(){
+  const now=performance.now()/1000;
+  // Floating ash
+  ctx.fillStyle='#d8c9b7';ctx.globalAlpha=.25;
+  for(let i=0;i<8;i++){const x=(i*73+now*(5+i%4)*6)%(FW*TS),y=(i*47+now*(8+i%3)*3)%(FH*TS);ctx.fillRect(x,y,1+(i%2),1+(i%3===0));}
+  // Рівно дві туманні смуги — без додаткових парних еліпсів.
+  ctx.globalAlpha=.07;ctx.fillStyle='#c9c9c2';
+  const fogX1=((now*14-cam*TS*.10)%(FW*TS+TS*12))-TS*6;
+  const fogX2=((now*10+TS*8-cam*TS*.07)%(FW*TS+TS*14))-TS*7;
+  ctx.fillRect(fogX1,TS*7.65,TS*10.8,TS*.55);
+  ctx.fillRect(fogX2,TS*9.45,TS*12.0,TS*.62);
+  // Lightweight vignette (scanlines removed for mobile performance).
+  const vg=ctx.createRadialGradient(FW*TS/2,FH*TS/2,TS*2,FW*TS/2,FH*TS/2,FW*TS*.72);vg.addColorStop(.45,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.72)');ctx.globalAlpha=1;ctx.fillStyle=vg;ctx.fillRect(0,0,FW*TS,FH*TS);
 }
 function render(){
   cam=Math.max(0,Math.min(p.x+PW/2-FW/2,L.width-FW));
   let sx=0,sy=0;
   if(state.shake>0){ const m=state.shake*10; sx=(Math.random()-.5)*m; sy=(Math.random()-.5)*m; }
 
-  ctx.fillStyle='#141B23'; ctx.fillRect(0,0,FW*TS,FH*TS);
+  drawHorrorBackdrop();
   ctx.save(); ctx.translate(sx,sy);
 
-  ctx.strokeStyle='#1B222B'; ctx.lineWidth=1;
+  ctx.strokeStyle='rgba(111,94,98,.12)'; ctx.lineWidth=1;
   const off=(-cam*TS)%TS;
   ctx.beginPath();
   for(let x=off;x<FW*TS+TS;x+=TS){ ctx.moveTo(Math.round(x)+.5,0); ctx.lineTo(Math.round(x)+.5,FH*TS); }
@@ -693,9 +1481,18 @@ function render(){
     const v=grid[ty][tx]; if(!v) continue;
     if(v===6&&!state.revealed.has(tx+':'+ty)) continue;
     const px=X(tx), py=Y(ty);
-    if(v===1||v===4||v===5) drawGround(px,py,TS+1,TS+1);
+    if(v===8){
+      ctx.save();
+      ctx.globalAlpha=.72;
+      ctx.fillStyle='#70658f'; ctx.fillRect(px,py+TS*.04,TS+1,TS*.32);
+      ctx.fillStyle='#c6b9ee'; ctx.fillRect(px,py+TS*.04,TS+1,Math.max(2,TS*.055));
+      ctx.strokeStyle='rgba(229,218,255,.55)'; ctx.lineWidth=Math.max(1,TS*.04);
+      ctx.strokeRect(px+TS*.05,py+TS*.07,TS*.9,TS*.23);
+      ctx.restore();
+    }
+    else if(v===1||v===4||v===5) drawGround(px,py,TS+1,TS+1);
     else if(v===7){
-      ctx.fillStyle='#C8382C';
+      ctx.fillStyle='#9d1d25';
       for(let i=0;i<3;i++){
         ctx.beginPath();
         ctx.moveTo(px+TS*(i/3),py);
@@ -727,25 +1524,26 @@ function render(){
     const cx=Math.round(X(L.checks[i]+0.3));
     if(cx<-TS*2||cx>FW*TS+TS) continue;
     ctx.globalAlpha=(i<=state.cp)?1:0.22;
-    ctx.fillStyle='#DED6C4';
+    ctx.fillStyle='#716a60';
     ctx.fillRect(cx,Y(GROUND_Y-1.5),Math.max(2,TS*0.07),TS*1.5);
-    ctx.fillRect(cx,Y(GROUND_Y-1.5),TS*0.42,TS*0.3);
+    ctx.fillStyle=(i<=state.cp)?'#d9a441':'#514a45';ctx.beginPath();ctx.arc(cx+TS*.13,Y(GROUND_Y-1.38),TS*.16,0,7);ctx.fill();
     ctx.globalAlpha=1;
   }
 
   if(state.coinFx){
     ctx.globalAlpha=Math.min(1,state.coinFx.life*1.6);
     ctx.fillStyle='#D9A441';
-    ctx.beginPath(); ctx.arc(X(state.coinFx.x),Y(state.coinFx.y),TS*0.22,0,7); ctx.fill();
+    ctx.beginPath(); ctx.arc(X(state.coinFx.x),Y(state.coinFx.y),TS*0.28,0,7); ctx.fill();
+    ctx.strokeStyle='#fff0b2';ctx.lineWidth=Math.max(1,TS*.06);ctx.stroke();
     ctx.globalAlpha=1;
   }
 
   // прапорець
   const fx=X(L.flag);
-  ctx.fillStyle='#DED6C4';
+  ctx.fillStyle='#82796d';
   ctx.fillRect(fx,Y(GROUND_Y-3),Math.max(2,TS*0.08),TS*3);
-  ctx.beginPath(); ctx.moveTo(fx,Y(GROUND_Y-3));
-  ctx.lineTo(fx+TS*0.9,Y(GROUND_Y-2.5)); ctx.lineTo(fx,Y(GROUND_Y-2));
+  ctx.fillStyle='#9d1720';ctx.beginPath(); ctx.moveTo(fx,Y(GROUND_Y-3));
+  ctx.lineTo(fx+TS*0.92,Y(GROUND_Y-2.72));ctx.lineTo(fx+TS*.7,Y(GROUND_Y-2.42));ctx.lineTo(fx+TS*.92,Y(GROUND_Y-2.18)); ctx.lineTo(fx,Y(GROUND_Y-2));
   ctx.closePath(); ctx.fill();
 
   const w=state.weight;
@@ -755,19 +1553,26 @@ function render(){
   }
 
   if(L.drawFront) L.drawFront.call(L);
+  drawDeathFx();
 
   if(state.dead<=0){
     const px=Math.round(X(p.x)), py=Math.round(Y(p.y));
     const sw=PW*TS, sh=PH*TS;
-    let spr=SPR.stand;
-    if(!p.onG) spr=SPR.jump;
-    else if(p.vx!==0) spr=(Math.floor(p.anim*9)%2)?SPR.run:SPR.stand;
+    ctx.globalAlpha=.28;ctx.fillStyle='#000';ctx.beginPath();ctx.ellipse(px+sw/2,Y(GROUND_Y)-TS*.03,sw*.7,TS*.16,0,0,7);ctx.fill();ctx.globalAlpha=1;
+    let spr=SPR.idle1;
+    if(!p.onG) spr=p.vy<0?SPR.jump:SPR.fall;
+    else if(Math.abs(p.vx)>0.01){
+      const frame=Math.floor(p.anim*11)%3;
+      spr=frame===0?SPR.run1:(frame===1?SPR.run2:SPR.run3);
+    }else spr=(Math.floor(performance.now()/320)%2)?SPR.idle1:SPR.idle2;
     ctx.save();
     if(p.face<0){ ctx.translate(px+sw,py); ctx.scale(-1,1); ctx.drawImage(spr,0,0,sw,sh); }
     else ctx.drawImage(spr,px,py,sw,sh);
     ctx.restore();
   }
   ctx.restore();
+  drawLanternLight();
+  drawAtmosphere();
 
   if(state.rejectMsg>0){
     const a=Math.min(1,state.rejectMsg*1.2);
@@ -791,37 +1596,79 @@ function render(){
     ctx.globalAlpha=1;
   }
   if(state.flash>0){
-    ctx.fillStyle='rgba(200,56,44,'+(state.flash*1.4)+')';
+    ctx.fillStyle='rgba(190,18,30,'+(state.flash*1.65)+')';
     ctx.fillRect(0,0,FW*TS,FH*TS);
   }
 }
 
 /* ================= цикл ================= */
-let last=0, acc=0; const FIXED=1/120;
+let last=0, acc=0; const FIXED=1/60;
 function loop(ts){
   requestAnimationFrame(loop);
   if(!last) last=ts;
   let dt=(ts-last)/1000; last=ts;
   if(dt>0.25) dt=0.25;
-  if(state.running){ acc+=dt; while(acc>=FIXED){ step(FIXED); acc-=FIXED; } }
+  if(state.running){ acc+=dt; let steps=0; while(acc>=FIXED&&steps<4){ step(FIXED); acc-=FIXED; steps++; } if(steps===4) acc=0; }
   render();
 }
 requestAnimationFrame(loop);
 
 function go(){
   if(state.running) return;
-  touches.clear(); keys.l=keys.r=false; p.buf=0;
+  keyboardKeys.l=keyboardKeys.r=false; padKeys.l=padKeys.r=false; syncMoveKeys(); p.buf=0;
   const act=ovB.dataset.act||'start';
-  if(act==='next') loadLevel(LI+1);
-  else{ state.deaths=0; dnum.textContent='0'; loadLevel(0); }
+  if(act==='next'){
+    loadLevel(LI+1);
+  }else{
+    resetRun();
+    const selectedLevel=BETA_TEST_MODE?Math.max(0,Math.min(LEVELS.length-1,Number(betaLevelSelect.value)||0)):0;
+    loadLevel(selectedLevel);
+  }
+  setBetaPickerVisible(false);
   ovB.dataset.act='restart';
   ov.classList.add('hidden');
   state.running=true; last=0; acc=0;
 }
-ovB.addEventListener('click',go);
-ovB.addEventListener('touchend',e=>{ e.preventDefault(); go(); },{passive:false});
+let overlayActivationAt=-1000;
+function activateOverlay(e){
+  if(ov.classList.contains('hidden')||state.running) return;
+  if(e&&e.target&&e.target.closest&&e.target.closest('#betaLevelPicker')) return;
+  const now=performance.now();
+  if(now-overlayActivationAt<180) return;
+  overlayActivationAt=now;
+  go();
+}
 
+window.__trapStart=activateOverlay;
+// Не запускаємо гру, коли користувач відкриває або змінює beta-селектор.
+for(const type of ['touchstart','pointerdown','click']){
+  betaLevelPicker.addEventListener(type,e=>e.stopPropagation(),{passive:false});
+}
+betaLevelSelect.addEventListener('change',()=>{
+  const n=(Number(betaLevelSelect.value)||0)+1;
+  ovB.textContent='Start Level '+n;
+});
+// v13: без автостарту. Реальний дотик/клік по оверлею або Start запускає обраний рівень.
+// Capture потрібен для iOS preview, де подія іноді не доходить до самої кнопки.
+ov.addEventListener('touchstart',activateOverlay,{passive:false,capture:true});
+ov.addEventListener('pointerdown',activateOverlay,{passive:false,capture:true});
+ov.addEventListener('click',activateOverlay,{passive:false,capture:true});
+ovB.addEventListener('touchend',activateOverlay,{passive:false});
+ovB.addEventListener('pointerup',activateOverlay,{passive:false});
 loadLevel(0); render();
+if(BETA_TEST_MODE){
+  window.__TRAP_TEST__={
+    load(i){ ov.classList.add('hidden'); state.running=true; loadLevel(Math.max(0,Math.min(LEVELS.length-1,i))); },
+    snapshot(){ return {level:LI,x:p.x,y:p.y,vx:p.vx,vy:p.vy,onG:p.onG,dead:state.dead,running:state.running,overlayHidden:ov.classList.contains('hidden'),grid: grid.map(r=>r.slice())}; },
+    setPlayer(x,y=GROUND_Y-PH){ p.x=x;p.y=y;p.vx=0;p.vy=0;p.airVx=0;p.onG=true;p.face=1;p.buf=0; },
+    gotoCheckpoint(i){ state.cp=Math.max(0,Math.min(L.checks.length-1,i)); resetLife(); },
+    holdRight(on=true){ keys.r=!!on; if(on) keys.l=false; },
+    holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
+    jump(){ p.buf=BUFFER; },
+    tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
+    buildId:'v17-final-level-plus-10-lives'
+  };
+}
 })();
 </script>
 </body>
