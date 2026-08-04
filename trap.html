@@ -259,7 +259,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v33</div>
+<div id="versionTag">v34</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -1040,7 +1040,7 @@ const LEVELS=[
 {
   name:'Level 10 · THE RITUAL', width:134, req:6, flag:130,
   checks:[1,17,36,57,78,99,116],
-  blocks:[{x:5,kind:'coin',id:'L10a'},{x:27,kind:'coin',id:'L10b'},{x:47,kind:'coin',id:'L10c'},{x:68,kind:'coin',id:'L10d'},{x:94,kind:'coin',id:'L10e'},{x:109,kind:'coin',id:'L10f'},
+  blocks:[{x:5,kind:'coin',id:'L10a'},{x:27,kind:'coin',id:'L10b'},{x:47,kind:'coin',id:'L10c'},{x:68,kind:'coin',id:'L10d'},{x:95,kind:'coin',id:'L10e'},{x:109,kind:'coin',id:'L10f'},
           {x:122,kind:'bossRune',id:'WARDEN_RUNE',row:8}],
   rejectToStart:false,
   build(){
@@ -1071,7 +1071,7 @@ const LEVELS=[
     }
     if(!T.collapseB&&p.onG&&p.x+PW>92&&p.x<95.8&&p.y<8.45){
       T.collapseBT=(T.collapseBT||0)+dt;
-      if(T.collapseBT>.2){ T.collapseB=true; carveRow(92,95,8); state.shake=.42; }
+      if(T.collapseBT>.2){ T.collapseB=true; carveRow(92,94,8); state.shake=.42; }
     }else if(!T.collapseB) T.collapseBT=0;
     if(p.x>16&&p.x<115){
       T.ritual=true; T.dropT=(T.dropT||1.8)-dt;
