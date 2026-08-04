@@ -1,5 +1,5 @@
 import gameHtml from "./trap.html";
-import trapShareImage from "./assets/trap-share-1280x720.jpg";
+import trapShareImage from "./assets/trap-share-640x360-v2.jpg";
 
 const SESSION_TTL = 60 * 60 * 24 * 30;
 const MINI_APP_AUTH_MAX_AGE = 60 * 60 * 24;
@@ -531,8 +531,8 @@ async function createPreparedChallenge(env, userId, body) {
     : `☠️ ${name} reached Level ${level} in TRAP with ${deaths} deaths.\nCan you do better?`;
   const shareText = `${messageText}\n\n` +
     `🎮 Play @trap_game_bot through my personal link:\n${link}\n\n` +
-    "🎁 Clear Level 1 to give me +1 bonus life. Then share your own challenge to earn bonus lives from your friends.";
-  const imageUrl = new URL("/assets/trap-share-1280x720.jpg", env.PUBLIC_BASE_URL || "https://trap-game.trap-games.workers.dev").toString();
+    "🎁 NEW PLAYERS ONLY: open my link and clear Level 1 to give me +1 bonus life. Existing players don't count. Share your own result to earn yours.";
+  const imageUrl = new URL("/assets/trap-share-640x360-v2.jpg", env.PUBLIC_BASE_URL || "https://trap-game.trap-games.workers.dev").toString();
   const prepared = await telegram(env, "savePreparedInlineMessage", {
     user_id: userId,
     result: {
@@ -540,8 +540,8 @@ async function createPreparedChallenge(env, userId, body) {
       id: crypto.randomUUID(),
       photo_url: imageUrl,
       thumbnail_url: imageUrl,
-      photo_width: 1280,
-      photo_height: 720,
+      photo_width: 640,
+      photo_height: 360,
       title: "Challenge a friend in TRAP",
       description: `Level ${level} · ${deaths} deaths`,
       caption: shareText,
@@ -1583,7 +1583,8 @@ export default {
       if (url.pathname === "/health") {
         return json({ ok: true, service: "trap-game", storage: "d1", telegram_webhook: Boolean(env.BOT_TOKEN && env.WEBHOOK_SECRET) });
       }
-      if (url.pathname === "/assets/trap-share-1280x720.jpg" && ["GET", "HEAD"].includes(request.method)) {
+      if (["/assets/trap-share-1280x720.jpg", "/assets/trap-share-640x360-v2.jpg"].includes(url.pathname) &&
+        ["GET", "HEAD"].includes(request.method)) {
         return new Response(request.method === "HEAD" ? null : trapShareImage, {
           headers: {
             "content-type": "image/jpeg",
