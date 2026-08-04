@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v12</title>
+<title>TRAP: Ten Rooms · v19</title>
 <style>
   :root{
     --ink:#07090d; --ink-2:#0d1118; --ink-3:#171b22;
@@ -26,7 +26,7 @@
     mix-blend-mode:multiply}
 
   #hud{width:min(100%,560px);min-height:68px;padding:12px 14px 10px;display:grid;
-       grid-template-columns:1.25fr 1fr .9fr .9fr;align-items:end;gap:8px;flex:0 0 auto;
+       grid-template-columns:1.2fr .9fr .78fr .78fr auto;align-items:end;gap:8px;flex:0 0 auto;
        background:linear-gradient(180deg,rgba(18,21,28,.96),rgba(7,9,13,.86));
        border-bottom:1px solid #292128;box-shadow:0 8px 28px rgba(0,0,0,.38);z-index:2}
   #lvl{font-size:10px;line-height:1.4;letter-spacing:.18em;text-transform:uppercase;
@@ -40,6 +40,12 @@
   .cnt.bump{transform:scale(1.24)}
   #coins{color:var(--gold)} #creq{color:var(--bone-dim);font-size:.62em}
   #deaths{color:#8d3838} #lives{color:var(--blood-bright)}
+  #scoreHudBtn{appearance:none;border:1px solid #49373e;background:linear-gradient(180deg,#171219,#090a0e);
+               color:var(--gold);min-width:48px;height:42px;padding:4px 6px;cursor:pointer;touch-action:manipulation;
+               font-weight:900;box-shadow:0 5px 14px rgba(0,0,0,.32)}
+  #scoreHudBtn span{display:block;font-size:16px;line-height:1}
+  #scoreHudBtn small{display:block;margin-top:4px;font-size:6px;letter-spacing:.13em;color:var(--bone-dim)}
+  #scoreHudBtn:active{transform:translateY(1px);border-color:var(--gold)}
 
   #stage{flex:0 0 auto;position:relative;line-height:0;padding:4px;
          background:linear-gradient(135deg,#2d2428,#0a0c11 45%,#332126);
@@ -83,9 +89,53 @@
          border:1px solid #9d6f6e;color:#eee4d6;font-size:11px;letter-spacing:.22em;font-weight:800;
          text-transform:uppercase;cursor:pointer;box-shadow:0 8px 26px rgba(0,0,0,.5);touch-action:manipulation;pointer-events:auto;position:relative;z-index:2;-webkit-user-select:none;user-select:none}
   #ovBtn:active{background:var(--blood);color:white;transform:translateY(1px)}
+  #ovBtn:disabled{opacity:.45;cursor:wait}
+  #resumeInfo{display:none;max-width:390px;padding:10px 14px;border:1px solid rgba(217,164,65,.34);
+              background:rgba(15,12,13,.64);color:var(--bone-dim);font-size:11px;line-height:1.55}
+  #resumeInfo.show{display:block}
+  #lifeStore{display:none;width:min(420px,100%);padding:15px;border:1px solid rgba(217,164,65,.38);
+             background:rgba(8,8,12,.88);box-shadow:0 12px 35px rgba(0,0,0,.48)}
+  #lifeStore.show{display:block}
+  #lifeStoreTitle{font-family:"Arial Narrow",Impact,sans-serif;font-size:19px;letter-spacing:.1em;color:var(--gold)}
+  #lifeStoreSub{margin:7px 0 12px;color:var(--bone-dim);font-size:11px;line-height:1.5}
+  #lifePacks{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .lifePack{touch-action:manipulation;min-height:74px;padding:9px 5px;border:1px solid #5c4144;background:#140d11;
+            color:var(--bone);font-weight:800;cursor:pointer}
+  .lifePack strong{display:block;color:var(--blood-bright);font-size:18px;margin-bottom:4px}
+  .lifePack span{display:block;color:var(--gold);font-size:11px;letter-spacing:.08em}
+  .lifePack:disabled{opacity:.45}
+  #storeStatus{min-height:18px;margin-top:9px;color:var(--bone-dim);font-size:10px}
+  .scoreMenuBtn{appearance:none;padding:10px 18px;border:1px solid #564249;background:#0d0d12;color:var(--gold);
+                font-size:9px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
+  .scoreMenuBtn:active{background:#21131a}
+  #scoresPanel{display:none;position:fixed;inset:0;z-index:70;align-items:center;justify-content:center;padding:18px;
+               background:rgba(2,3,6,.94);touch-action:manipulation;pointer-events:auto}
+  #scoresPanel.show{display:flex}
+  #scoresCard{position:relative;width:min(440px,100%);max-height:min(720px,92vh);overflow:hidden;
+              border:1px solid #5c434a;background:linear-gradient(180deg,#141118,#08090d);
+              box-shadow:0 24px 70px rgba(0,0,0,.72);padding:20px 16px 15px;text-align:left}
+  #scoresTitle{font-family:"Arial Narrow",Impact,sans-serif;font-size:29px;letter-spacing:.08em;color:var(--bone);
+               text-align:center;text-shadow:2px 3px 0 #481018}
+  #scoresSubtitle{text-align:center;margin:5px 0 13px;color:var(--bone-dim);font-size:9px;letter-spacing:.15em;text-transform:uppercase}
+  #scoresClose{position:absolute;right:9px;top:8px;width:34px;height:34px;border:1px solid #4b3a40;background:#0a0b0f;
+               color:var(--bone);font-size:20px;cursor:pointer;touch-action:manipulation}
+  #myScore{padding:11px 12px;margin-bottom:10px;border:1px solid rgba(214,167,67,.36);background:rgba(42,29,18,.28);
+           color:var(--bone);font-size:12px;line-height:1.45}
+  #myScore b{color:var(--gold)}
+  #scoresList{max-height:min(430px,52vh);overflow:auto;border-top:1px solid #33282e;border-bottom:1px solid #33282e}
+  .scoreRow{display:grid;grid-template-columns:42px 1fr auto;gap:8px;align-items:center;padding:10px 7px;
+            border-bottom:1px solid rgba(76,58,65,.42);font-size:12px}
+  .scoreRow:last-child{border-bottom:0}.scoreRow.me{background:rgba(183,35,39,.12)}
+  .scoreRank{color:var(--gold);font-weight:900}.scoreName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bone)}
+  .scoreResult{text-align:right;color:var(--bone);font-weight:800}.scoreResult small{display:block;margin-top:2px;color:#9b5960;font-size:9px}
+  #scoresEmpty{padding:26px 10px;text-align:center;color:var(--bone-dim);font-size:12px}
+  #scoresFooter{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
+  #scoresStatus{min-height:16px;color:var(--bone-dim);font-size:9px;line-height:1.4}
+  #scoresRefresh{padding:9px 13px;border:1px solid #59434a;background:#120d11;color:var(--gold);font-size:8px;
+                 font-weight:900;letter-spacing:.15em;cursor:pointer;touch-action:manipulation}
   #versionTag{position:fixed;right:10px;bottom:8px;z-index:25;font-size:10px;letter-spacing:.18em;
     color:rgba(230,223,207,.38);font-weight:700;pointer-events:none;text-transform:lowercase;text-shadow:0 1px 2px #000}
-  @media(max-width:390px){#hud{padding-left:9px;padding-right:9px;gap:5px}.cnt{font-size:25px}#lvl{font-size:8px}}
+  @media(max-width:390px){#hud{padding-left:7px;padding-right:7px;gap:4px}.cnt{font-size:23px}#lvl{font-size:8px}#scoreHudBtn{min-width:42px;padding:3px}}
 </style>
 </head>
 <body>
@@ -95,6 +145,7 @@
   <div class="cnt" id="coins"><small>COINS</small><span id="cnum">0</span><span id="creq">/?</span></div>
   <div class="cnt" id="lives"><small>LIVES</small><span id="lnum">3</span></div>
   <div class="cnt" id="deaths"><small>DEATHS</small><span id="dnum">0</span></div>
+  <button id="scoreHudBtn" class="scoreControl" type="button" aria-label="Open scores"><span>🏆</span><small>SCORES</small></button>
 </div>
 
 <div id="stage"><canvas id="c"></canvas></div>
@@ -107,7 +158,7 @@
 
 <div id="overlay">
   <div id="ovTitle">TRAP</div>
-  <div id="ovSub">Ten rooms are waiting. Collect every coin and reach the flag.<br><br>You begin with <b>3 lives</b>. Lose them all and the nightmare starts from Level 1. Clear every level to earn <b>+1 life</b>.</div>
+  <div id="ovSub">Ten rooms are waiting. Collect every coin and reach the flag.<br><br>You begin with <b>3 lives</b>. Lose them all and the nightmare starts from Level 1. Clear every level to earn <b>+1 life</b>. Progress is saved when launched from Telegram.</div>
   <div id="betaLevelPicker" aria-hidden="true">
     <label for="betaLevelSelect">Beta level select</label>
     <select id="betaLevelSelect" aria-label="Choose level for beta testing">
@@ -123,6 +174,18 @@
       <option value="9">Level 10 · The Ritual</option>
     </select>
   </div>
+  <div id="resumeInfo"></div>
+  <div id="lifeStore" aria-hidden="true">
+    <div id="lifeStoreTitle">CONTINUE WITH TELEGRAM STARS</div>
+    <div id="lifeStoreSub">The purchase is credited to your Telegram account and restores this checkpoint.</div>
+    <div id="lifePacks">
+      <button class="lifePack" type="button" data-stars="10"><strong>+1 LIFE</strong><span>10 ⭐</span></button>
+      <button class="lifePack" type="button" data-stars="50"><strong>+7 LIVES</strong><span>50 ⭐</span></button>
+      <button class="lifePack" type="button" data-stars="100"><strong>+15 LIVES</strong><span>100 ⭐</span></button>
+    </div>
+    <div id="storeStatus"></div>
+  </div>
+  <button id="scoreMenuBtn" class="scoreControl scoreMenuBtn" type="button">🏆 Scores</button>
   <button id="ovBtn" type="button"
     onclick="window.__trapStart&&window.__trapStart(event)"
     onpointerdown="window.__trapStart&&window.__trapStart(event)"
@@ -130,8 +193,22 @@
     ontouchstart="window.__trapStart&&window.__trapStart(event)"
     ontouchend="window.__trapStart&&window.__trapStart(event)">Start</button>
 </div>
-<div id="versionTag">v17</div>
+<div id="scoresPanel" aria-hidden="true">
+  <div id="scoresCard" role="dialog" aria-modal="true" aria-labelledby="scoresTitle">
+    <button id="scoresClose" type="button" aria-label="Close scores">×</button>
+    <div id="scoresTitle">HALL OF DEATHS</div>
+    <div id="scoresSubtitle">Higher level wins · fewer deaths break ties</div>
+    <div id="myScore">Open the game from Telegram to load your score.</div>
+    <div id="scoresList"><div id="scoresEmpty">No scores loaded.</div></div>
+    <div id="scoresFooter">
+      <div id="scoresStatus"></div>
+      <button id="scoresRefresh" type="button">REFRESH</button>
+    </div>
+  </div>
+</div>
+<div id="versionTag">v19</div>
 
+<script defer src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
 (()=>{
 "use strict";
@@ -142,7 +219,12 @@ const FW=16, FH=14, GROUND_Y=11;
 // ===== BETA TEST =====
 // true  = нескінченні життя для тестування
 // false = звичайний режим із життями
-const BETA_TEST_MODE = false;
+const URL_PARAMS=new URLSearchParams(location.search);
+const BETA_TEST_MODE = URL_PARAMS.get('beta')==='1';
+const TG_SESSION=URL_PARAMS.get('tg_session')||'';
+const API_BASE=(URL_PARAMS.get('api')||((location.protocol==='http:'||location.protocol==='https:')?location.origin:'')).replace(/\/$/,'');
+const HAS_TELEGRAM_BACKEND=Boolean(TG_SESSION&&API_BASE);
+const LOCAL_SAVE_KEY='trap_progress_v18';
 
 const PW=0.8, PH=1.8;
 const SPEED=6.5, JUMP_V=20, GRAV=57.2, MAXFALL=32;
@@ -161,6 +243,22 @@ const ov=document.getElementById('overlay'), ovT=document.getElementById('ovTitl
       ovS=document.getElementById('ovSub'), ovB=document.getElementById('ovBtn');
 const betaLevelPicker=document.getElementById('betaLevelPicker');
 const betaLevelSelect=document.getElementById('betaLevelSelect');
+const resumeInfo=document.getElementById('resumeInfo');
+const lifeStore=document.getElementById('lifeStore');
+const storeStatus=document.getElementById('storeStatus');
+const lifePackButtons=[...document.querySelectorAll('.lifePack')];
+const scoreOpenButtons=[...document.querySelectorAll('.scoreControl')];
+const scoresPanel=document.getElementById('scoresPanel');
+const scoresClose=document.getElementById('scoresClose');
+const scoresRefresh=document.getElementById('scoresRefresh');
+const scoresList=document.getElementById('scoresList');
+const scoresStatus=document.getElementById('scoresStatus');
+const myScore=document.getElementById('myScore');
+let scoresWasRunning=false;
+let resumeProgress=null;
+let remotePaymentVersion=0;
+let saveTimer=0;
+let saveInFlight=false;
 function setBetaPickerVisible(visible){
   if(!BETA_TEST_MODE) return;
   betaLevelPicker.classList.toggle('show',visible);
@@ -869,15 +967,15 @@ const LEVELS=[
   rejectToStart:false,
   build(){
     blank(this.width); fillGround(this.width);
-    pitSpikes(11,14); carve(30,34); pitSpikes(50,54); carve(70,75); pitSpikes(91,96); carve(110,114);
-    spikeLine(20,22); spikeLine(39,42); spikeLine(60,63); spikeLine(82,85); spikeLine(102,105);
-    platform(12,13,9); crumbleLine(31,33,10); platform(50,53,9); crumbleLine(71,74,9); platform(92,95,8); crumbleLine(111,113,10);
+    pitSpikes(11,13); carve(30,33); pitSpikes(50,53); carve(70,73); pitSpikes(91,94); carve(110,113);
+    spikeLine(20,21); spikeLine(39,40); spikeLine(60,61); spikeLine(83,84); spikeLine(102,103);
+    platform(12,13,9); platform(31,33,10); platform(50,53,9); platform(71,73,9); platform(92,94,8); platform(111,113,10);
     for(let x=44;x<=46;x++) grid[7][x]=1; // v16: балка закінчується до монетки, стрибок більше не блокується
     for(let x=97;x<=101;x++) grid[8][x]=6;
     // boss arena
     for(let x=115;x<=133;x++) for(let y=GROUND_Y;y<FH;y++) grid[y][x]=1;
     for(let y=7;y<=10;y++) grid[y][132]=4;
-    grid[10][119]=5; grid[10][125]=5; grid[10][128]=5;
+    grid[10][119]=1; grid[10][125]=1; grid[10][128]=1;
   },
   onFlag(){
     if(!T.boss||!T.boss.dead){
@@ -898,18 +996,18 @@ const LEVELS=[
       if(T.collapseBT>.2){ T.collapseB=true; carveRow(92,95,8); state.shake=.42; }
     }else if(!T.collapseB) T.collapseBT=0;
     if(p.x>16&&p.x<115){
-      T.ritual=true; T.dropT=(T.dropT||1.0)-dt;
+      T.ritual=true; T.dropT=(T.dropT||1.8)-dt;
       // v15: рідші падіння до арени боса — приблизно раз на 2.2 секунди.
-      if(T.dropT<=0&&!state.weight){ T.dropT=2.2; state.weight={delay:0,x:p.x+1.5+(Math.sin(p.x)*1.5),y:-1.8,vy:15,live:true}; }
-      T.volley=(T.volley||1.1)-dt;
-      if(T.volley<=0&&!state.proj){T.volley=2.0;state.proj={x:p.x+11,y:9.6,vx:-13};}
+      if(T.dropT<=0&&!state.weight){ T.dropT=3.2; state.weight={delay:.15,x:p.x+1.5+(Math.sin(p.x)*1.5),y:-1.8,vy:13,live:false}; }
+      T.volley=(T.volley||1.8)-dt;
+      if(T.volley<=0&&!state.proj){T.volley=3.0;state.proj={x:p.x+11,y:9.6,vx:-10.5};}
     }
-    if(!T.rise&&p.x>103.5){ T.rise=true; spikeLine(106,108); state.shake=.34; }
+    // v18: removed the surprise spike wall before the final arena.
     const pr=state.proj;
     if(pr){pr.x+=pr.vx*dt;if(p.x+PW>pr.x&&p.x<pr.x+1&&p.y+PH>pr.y&&p.y<pr.y+.8)die();if(pr.x<p.x-13)state.proj=null;}
 
     if(!T.boss&&p.x>116.4){
-      T.boss={hp:5,max:5,x:127,y:4.2,t:0,shotT:.85,dropT:2.0,runeT:0,hitT:0,dead:false,deathT:0};
+      T.boss={hp:3,max:3,x:127,y:4.2,t:0,shotT:1.5,dropT:3.0,runeT:0,hitT:0,dead:false,deathT:0};
       for(let y=7;y<=10;y++) grid[y][116]=4;
       state.bossShots=[]; state.saveMsg=1.8; state.saveTxt='THE WARDEN AWAKENS'; state.shake=.85;
     }
@@ -926,21 +1024,18 @@ const LEVELS=[
         const rage=1-b.hp/b.max;
         b.shotT-=dt;
         if(b.shotT<=0){
-          b.shotT=Math.max(.42,1.12-rage*.48);
+          b.shotT=Math.max(1.15,1.75-rage*.45);
           const dx=(p.x+PW*.5)-b.x, dy=(p.y+PH*.5)-b.y;
-          const len=Math.hypot(dx,dy)||1, speed=8.2+rage*3.2;
+          const len=Math.hypot(dx,dy)||1, speed=7.4+rage*2.0;
           state.bossShots.push({x:b.x,y:b.y,vx:dx/len*speed,vy:dy/len*speed,life:5,r:.34});
         }
         b.dropT-=dt;
         if(b.dropT<=0&&!state.weight){
           // v15: навіть у rage-фазі між падіннями є щонайменше ~1.8 секунди.
-          b.dropT=Math.max(1.8,2.35-rage*.55);
+          b.dropT=Math.max(2.8,3.4-rage*.6);
           state.weight={delay:.08,x:Math.max(117,Math.min(130,p.x+(Math.random()-.5)*2.4)),y:-2,vy:13+rage*4,live:false};
         }
-        if(b.hp<=2&&!T.bossFloor&&p.onG&&p.x>126){
-          T.bossFloorT=(T.bossFloorT||0)+dt;
-          if(T.bossFloorT>.42){ T.bossFloor=true; carve(126,127); state.shake=.6; }
-        }else if(!T.bossFloor) T.bossFloorT=0;
+        // v18: the boss no longer destroys the floor under the player.
       }else{
         b.deathT+=dt;
         if(b.deathT<1.1) state.shake=Math.max(state.shake,.18);
@@ -1025,6 +1120,206 @@ function loadLevel(i){
   cnum.textContent='0'; creq.textContent='/?';
   resetLife();
 }
+
+/* ================= Telegram saves / in-game scores / Stars ================= */
+function serializeProgress(screen='playing'){
+  return {
+    level:LI, checkpoint:state.cp, deaths:state.deaths, lives:state.lives,
+    coins:state.coins, got:[...state.got], bonusLives:[...state.bonusLives],
+    hiddenOn:state.hiddenOn, reqKnown:state.reqKnown, flags:{...state.flags},
+    screen, completed:screen==='game_complete'
+  };
+}
+function localSave(progress){
+  try{ localStorage.setItem(LOCAL_SAVE_KEY,JSON.stringify({progress,payment_version:remotePaymentVersion})); }catch(_){ }
+}
+function localLoad(){
+  try{ const v=JSON.parse(localStorage.getItem(LOCAL_SAVE_KEY)||'null'); return v&&v.progress?v:null; }catch(_){ return null; }
+}
+async function apiRequest(path,options={}){
+  if(!HAS_TELEGRAM_BACKEND) throw new Error('Telegram backend is unavailable');
+  const headers={...(options.headers||{}),Authorization:'Bearer '+TG_SESSION};
+  if(options.body&&!headers['Content-Type']) headers['Content-Type']='application/json';
+  const response=await fetch(API_BASE+path,{...options,headers});
+  let data={}; try{data=await response.json();}catch(_){ }
+  if(!response.ok){ const err=new Error(data.error||('HTTP '+response.status)); err.status=response.status; err.data=data; throw err; }
+  return data;
+}
+function escapeHtml(value){
+  return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+function renderLeaderboard(data){
+  const me=data&&data.me;
+  if(me){
+    myScore.innerHTML='<b>YOUR BEST · #'+Number(me.rank)+'</b><br>Level '+Number(me.level)+' · '+Number(me.deaths)+' deaths';
+  }else{
+    myScore.innerHTML='<b>YOUR BEST</b><br>No recorded result yet. Start a level to enter the leaderboard.';
+  }
+  const players=Array.isArray(data&&data.players)?data.players:[];
+  if(!players.length){
+    scoresList.innerHTML='<div id="scoresEmpty">No scores yet.</div>';
+    return;
+  }
+  scoresList.innerHTML=players.map(row=>
+    '<div class="scoreRow '+(row.is_me?'me':'')+'">'+
+      '<div class="scoreRank">#'+Number(row.rank)+'</div>'+
+      '<div class="scoreName">'+escapeHtml(row.name||'Player')+'</div>'+
+      '<div class="scoreResult">Level '+Number(row.level)+'<small>'+Number(row.deaths)+' deaths</small></div>'+
+    '</div>'
+  ).join('');
+}
+async function loadLeaderboard(){
+  scoresStatus.textContent='Loading…';
+  scoresRefresh.disabled=true;
+  if(!HAS_TELEGRAM_BACKEND){
+    myScore.innerHTML='<b>SCORES UNAVAILABLE</b><br>Open the game from the Telegram bot.';
+    scoresList.innerHTML='<div id="scoresEmpty">Telegram session is missing.</div>';
+    scoresStatus.textContent=''; scoresRefresh.disabled=false; return;
+  }
+  try{
+    const data=await apiRequest('/api/leaderboard');
+    renderLeaderboard(data);
+    scoresStatus.textContent=BETA_TEST_MODE?'BETA: results are visible but test runs are not submitted.':'Best result is saved automatically.';
+  }catch(err){
+    scoresList.innerHTML='<div id="scoresEmpty">Could not load scores.</div>';
+    scoresStatus.textContent=err.message||'Request failed.';
+  }finally{ scoresRefresh.disabled=false; }
+}
+function openScores(e){
+  if(e){e.preventDefault();e.stopPropagation();}
+  if(scoresPanel.classList.contains('show')) return;
+  scoresWasRunning=state.running;
+  state.running=false;
+  keyboardKeys.l=keyboardKeys.r=false; padKeys.l=padKeys.r=false; syncMoveKeys();
+  scoresPanel.classList.add('show'); scoresPanel.setAttribute('aria-hidden','false');
+  loadLeaderboard();
+}
+function closeScores(e){
+  if(e){e.preventDefault();e.stopPropagation();}
+  scoresPanel.classList.remove('show'); scoresPanel.setAttribute('aria-hidden','true');
+  if(scoresWasRunning&&ov.classList.contains('hidden')){state.running=true;last=0;acc=0;}
+  scoresWasRunning=false;
+}
+scoreOpenButtons.forEach(button=>{
+  button.addEventListener('click',openScores);
+  button.addEventListener('touchend',openScores,{passive:false});
+});
+scoresClose.addEventListener('click',closeScores);
+scoresClose.addEventListener('touchend',closeScores,{passive:false});
+scoresRefresh.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();loadLeaderboard();});
+scoresPanel.addEventListener('click',e=>{if(e.target===scoresPanel)closeScores(e);else e.stopPropagation();});
+scoresPanel.addEventListener('touchstart',e=>e.stopPropagation(),{passive:false});
+addEventListener('keydown',e=>{if(e.key==='Escape'&&scoresPanel.classList.contains('show'))closeScores(e);});
+
+async function persistSnapshot(progress,keepalive=false){
+  if(BETA_TEST_MODE) return;
+  localSave(progress);
+  if(!HAS_TELEGRAM_BACKEND||saveInFlight) return;
+  saveInFlight=true;
+  try{
+    const data=await apiRequest('/api/state',{method:'POST',body:JSON.stringify({progress,payment_version:remotePaymentVersion}),keepalive});
+    remotePaymentVersion=Number(data.payment_version)||0;
+  }catch(err){
+    if(err.status===409&&err.data){
+      remotePaymentVersion=Number(err.data.payment_version)||remotePaymentVersion;
+      if(err.data.progress&&Number(err.data.progress.lives)>state.lives&&state.won) resumeAfterPayment(err.data.progress);
+    }
+  }finally{ saveInFlight=false; }
+}
+function queueSave(screen='playing',immediate=false){
+  if(BETA_TEST_MODE) return;
+  clearTimeout(saveTimer);
+  const snapshot=serializeProgress(screen);
+  if(immediate) persistSnapshot(snapshot,true);
+  else saveTimer=setTimeout(()=>persistSnapshot(snapshot),180);
+}
+async function submitScore(level=LI+1){
+  if(BETA_TEST_MODE||!HAS_TELEGRAM_BACKEND) return;
+  try{ await apiRequest('/api/score',{method:'POST',body:JSON.stringify({level,deaths:state.deaths})}); }catch(_){ }
+}
+function applyProgress(progress){
+  if(!progress||typeof progress!=='object') return false;
+  const level=Math.max(0,Math.min(LEVELS.length-1,Number(progress.level)||0));
+  LI=level; L=LEVELS[level]; lvlEl.textContent=L.name;
+  state.cp=Math.max(0,Math.min(L.checks.length-1,Number(progress.checkpoint)||0));
+  state.deaths=Math.max(0,Number(progress.deaths)||0);
+  state.lives=Math.max(0,Number(progress.lives)||0);
+  state.coins=Math.max(0,Number(progress.coins)||0);
+  state.req=L.req; state.reqKnown=Boolean(progress.reqKnown);
+  state.got=new Set(Array.isArray(progress.got)?progress.got:[]);
+  state.bonusLives=new Set(Array.isArray(progress.bonusLives)?progress.bonusLives:[]);
+  state.hiddenOn=Boolean(progress.hiddenOn); state.flags=progress.flags&&typeof progress.flags==='object'?{...progress.flags}:{};
+  state.revealed=new Set(); state.gameOverPending=false; state.won=false;
+  dnum.textContent=state.deaths; cnum.textContent=state.coins; creq.textContent=state.reqKnown?('/'+state.req):'/?'; updateLives();
+  resetLife();
+  return true;
+}
+function showResume(progress){
+  if(BETA_TEST_MODE||!progress||progress.completed) return;
+  resumeProgress=progress;
+  const level=Math.max(0,Math.min(9,Number(progress.level)||0))+1;
+  const cp=Math.max(0,Number(progress.checkpoint)||0)+1;
+  resumeInfo.innerHTML='<b style="color:var(--gold)">SAVED GAME</b><br>Level '+level+' · checkpoint '+cp+' · '+(Number(progress.deaths)||0)+' deaths · '+(Number(progress.lives)||0)+' lives';
+  resumeInfo.classList.add('show');
+  ovB.textContent='Continue Level '+level; ovB.dataset.act='resume';
+}
+async function initializeSave(){
+  if(BETA_TEST_MODE){ ovB.disabled=false; return; }
+  ovB.disabled=true; ovB.textContent='Loading save…';
+  const local=localLoad();
+  if(local){ remotePaymentVersion=Number(local.payment_version)||0; showResume(local.progress); }
+  if(HAS_TELEGRAM_BACKEND){
+    try{
+      const data=await apiRequest('/api/state');
+      remotePaymentVersion=Number(data.payment_version)||0;
+      if(data.progress){ localSave(data.progress); showResume(data.progress); }
+    }catch(_){ }
+  }
+  if(!resumeProgress){ ovB.textContent='Start'; ovB.dataset.act='start'; }
+  ovB.disabled=false;
+}
+function setLifeStoreVisible(visible){
+  const show=Boolean(visible&&!BETA_TEST_MODE);
+  lifeStore.classList.toggle('show',show); lifeStore.setAttribute('aria-hidden',show?'false':'true');
+}
+async function refreshRemoteState(resume=false){
+  if(!HAS_TELEGRAM_BACKEND) return;
+  try{
+    const data=await apiRequest('/api/state'); remotePaymentVersion=Number(data.payment_version)||0;
+    if(data.progress){ localSave(data.progress); if(resume&&Number(data.progress.lives)>0) resumeAfterPayment(data.progress); }
+  }catch(_){ }
+}
+function resumeAfterPayment(progress){
+  if(!applyProgress(progress)) return;
+  resumeProgress=null; resumeInfo.classList.remove('show'); setLifeStoreVisible(false);
+  ov.classList.add('hidden'); state.running=true; state.won=false; state.gameOverPending=false; last=0; acc=0;
+  storeStatus.textContent='Lives restored. Continue.';
+}
+async function buyLifePack(stars){
+  if(!HAS_TELEGRAM_BACKEND){ storeStatus.textContent='Open the game from the Telegram bot to buy lives.'; return; }
+  lifePackButtons.forEach(b=>b.disabled=true); storeStatus.textContent='Creating Telegram Stars invoice…';
+  await persistSnapshot(serializeProgress('game_over'));
+  try{
+    const data=await apiRequest('/api/invoice',{method:'POST',body:JSON.stringify({stars})});
+    const url=data.invoice_url;
+    if(window.Telegram&&Telegram.WebApp&&typeof Telegram.WebApp.openInvoice==='function'){
+      Telegram.WebApp.openInvoice(url,status=>{
+        storeStatus.textContent=status==='paid'?'Payment received. Restoring lives…':'Invoice '+status+'.';
+        if(status==='paid') setTimeout(()=>refreshRemoteState(true),500);
+      });
+    }else{
+      storeStatus.textContent='Opening Telegram invoice…';
+      location.href=url;
+    }
+  }catch(err){ storeStatus.textContent=err.message||'Could not create invoice.'; }
+  finally{ lifePackButtons.forEach(b=>b.disabled=false); }
+}
+lifePackButtons.forEach(button=>{
+  const start=e=>{e.preventDefault();e.stopPropagation();buyLifePack(Number(button.dataset.stars));};
+  button.addEventListener('click',start); button.addEventListener('touchend',start,{passive:false});
+});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.won) refreshRemoteState(true);});
+addEventListener('pagehide',()=>{if(!BETA_TEST_MODE) persistSnapshot(serializeProgress(state.won?'game_over':'playing'),true);});
 
 /* ================= ввід ================= */
 const keys={l:false,r:false};
@@ -1220,7 +1515,7 @@ function hitBossRune(tx,ty){
   const b=T.boss;
   if(!b||b.dead){ grid[ty][tx]=2; return; }
   if(b.runeT>0){ grid[ty][tx]=2; return; }
-  b.hp=Math.max(0,b.hp-1); b.runeT=1.15; b.hitT=.28;
+  b.hp=Math.max(0,b.hp-1); b.runeT=.75; b.hitT=.28;
   state.shake=.68; state.flash=.16; state.saveMsg=.85; state.saveTxt=b.hp?'WARDEN '+b.hp+' / '+b.max:'THE WARDEN FALLS';
   for(let i=0;i<18;i++) state.deathFx.push({x:b.x,y:b.y,vx:(Math.random()-.5)*10,vy:(Math.random()-.5)*8,life:.5+Math.random()*.5,max:1,r:.04+Math.random()*.08,red:true});
   if(b.hp<=0){
@@ -1236,6 +1531,7 @@ function die(){
   state.gameOverPending=!BETA_TEST_MODE&&state.lives<=0;
   state.shake=0.72; state.flash=0.46;
   dnum.textContent=state.deaths; updateLives();
+  queueSave(state.gameOverPending?'game_over':'playing',true);
   dbox.classList.add('bump'); setTimeout(()=>dbox.classList.remove('bump'),100);
 }
 
@@ -1256,8 +1552,10 @@ function tryFlag(){
 function gameOver(){
   state.running=false; state.won=true;
   ovT.textContent='NO LIVES LEFT';
-  ovS.innerHTML='The nightmare has taken everything.<br><br>You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>Restarting means returning to Level 1.';
-  ovB.textContent='Begin Again'; ovB.dataset.act='restart'; setBetaPickerVisible(true); ov.classList.remove('hidden');
+  ovS.innerHTML='You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>Your checkpoint is saved. Buy lives with Telegram Stars or begin again from Level 1.';
+  ovB.textContent='Begin Again'; ovB.dataset.act='restart';
+  setLifeStoreVisible(true); queueSave('game_over',true); submitScore(LI+1);
+  setBetaPickerVisible(true); ov.classList.remove('hidden');
 }
 function win(){
   state.won=true; state.running=false;
@@ -1278,6 +1576,10 @@ function win(){
     (last?'<br><br>You survived all ten rooms.':'<br><br>The next room is worse.');
   ovB.textContent=last?'Restart':'Next';
   ovB.dataset.act=last?'restart':'next';
+  setLifeStoreVisible(false);
+  const saved=serializeProgress(last?'game_complete':'level_complete');
+  if(!last){ saved.level=LI+1; saved.checkpoint=0; saved.coins=0; saved.got=[]; saved.hiddenOn=false; saved.reqKnown=false; saved.flags={}; }
+  persistSnapshot(saved,true); submitScore(LI+1);
   setBetaPickerVisible(last);
   ov.classList.remove('hidden');
 }
@@ -1326,8 +1628,12 @@ function step(dt){
   }
 
   // чекпоінти
-  for(let i=L.checks.length-1;i>=0;i--)
-    if(p.x>=L.checks[i]&&i>state.cp){ state.cp=i; state.saveMsg=1.1; state.saveTxt='SAVED'; break; }
+  for(let i=L.checks.length-1;i>=0;i--){
+    if(p.x>=L.checks[i]&&i>state.cp){
+      state.cp=i; state.saveMsg=1.1; state.saveTxt='SAVED';
+      queueSave('playing'); submitScore(LI+1); break;
+    }
+  }
 
   // монетка-візуал
   if(state.coinFx){
@@ -1618,21 +1924,23 @@ function go(){
   keyboardKeys.l=keyboardKeys.r=false; padKeys.l=padKeys.r=false; syncMoveKeys(); p.buf=0;
   const act=ovB.dataset.act||'start';
   if(act==='next'){
-    loadLevel(LI+1);
+    loadLevel(LI+1); queueSave('level_start',true); submitScore(LI+1);
+  }else if(act==='resume'&&resumeProgress&&!BETA_TEST_MODE){
+    applyProgress(resumeProgress); resumeProgress=null; resumeInfo.classList.remove('show');
   }else{
     resetRun();
     const selectedLevel=BETA_TEST_MODE?Math.max(0,Math.min(LEVELS.length-1,Number(betaLevelSelect.value)||0)):0;
-    loadLevel(selectedLevel);
+    loadLevel(selectedLevel); queueSave('level_start',true); submitScore(selectedLevel+1);
   }
-  setBetaPickerVisible(false);
+  setLifeStoreVisible(false); setBetaPickerVisible(false);
   ovB.dataset.act='restart';
   ov.classList.add('hidden');
   state.running=true; last=0; acc=0;
 }
 let overlayActivationAt=-1000;
 function activateOverlay(e){
-  if(ov.classList.contains('hidden')||state.running) return;
-  if(e&&e.target&&e.target.closest&&e.target.closest('#betaLevelPicker')) return;
+  if(ov.classList.contains('hidden')||state.running||ovB.disabled) return;
+  if(e&&e.target&&e.target.closest&&(e.target.closest('#betaLevelPicker')||e.target.closest('#lifeStore')||e.target.closest('.scoreControl')||e.target.closest('#scoresPanel'))) return;
   const now=performance.now();
   if(now-overlayActivationAt<180) return;
   overlayActivationAt=now;
@@ -1655,7 +1963,7 @@ ov.addEventListener('pointerdown',activateOverlay,{passive:false,capture:true});
 ov.addEventListener('click',activateOverlay,{passive:false,capture:true});
 ovB.addEventListener('touchend',activateOverlay,{passive:false});
 ovB.addEventListener('pointerup',activateOverlay,{passive:false});
-loadLevel(0); render();
+loadLevel(0); render(); initializeSave();
 if(BETA_TEST_MODE){
   window.__TRAP_TEST__={
     load(i){ ov.classList.add('hidden'); state.running=true; loadLevel(Math.max(0,Math.min(LEVELS.length-1,i))); },
@@ -1666,7 +1974,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v17-final-level-plus-10-lives'
+    buildId:'v19-in-game-leaderboard'
   };
 }
 })();

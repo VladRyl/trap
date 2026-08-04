@@ -1,1 +1,3 @@
 .env
+backups/*.sqlite3.gz
+data/*.sqlite3
