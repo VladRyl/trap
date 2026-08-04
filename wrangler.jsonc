@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "trap-game",
+  "account_id": "d9e35097cb1a4e088ec92c3b0fd3bf73",
+  "main": "worker.js",
+  "compatibility_date": "2026-08-04",
+  "compatibility_flags": ["global_fetch_strictly_public"],
+  "vars": {
+    "GAME_SHORT_NAME": "trap_game",
+    "GAME_BETA": "0"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "trap-game-db",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/*.html"],
+      "fallthrough": true
+    }
+  ]
+}

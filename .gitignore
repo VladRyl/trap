@@ -1,3 +1,10 @@
 .env
-backups/*.sqlite3.gz
-data/*.sqlite3
+
+__pycache__/
+*.pyc
+
+data/*.sqlite3*
+backups/*
+!backups/.gitkeep
+
+.wrangler/
