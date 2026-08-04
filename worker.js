@@ -536,7 +536,7 @@ function percentage(numerator, denominator) {
 
 async function adminStatsMessage(env) {
   const since = now() - 7 * 24 * 60 * 60;
-  const [players, events, payments, refunds, referrals, topReferrers] = await env.DB.batch([
+  const [players, events, activePlayers, payments, refunds, referrals, topReferrers] = await env.DB.batch([
     env.DB.prepare("SELECT COUNT(*) AS total FROM players"),
     env.DB.prepare(
       `SELECT event_name, COUNT(*) AS events, COUNT(DISTINCT user_id) AS users, SUM(value) AS value_total,
@@ -544,6 +544,11 @@ async function adminStatsMessage(env) {
        COUNT(DISTINCT CASE WHEN created_at>=? THEN user_id END) AS users_7d
        FROM analytics_events GROUP BY event_name`,
     ).bind(since, since),
+    env.DB.prepare(
+      `SELECT COUNT(DISTINCT user_id) AS users,
+       COUNT(DISTINCT CASE WHEN created_at>=? THEN user_id END) AS users_7d
+       FROM analytics_events WHERE event_name IN ('game_start', 'game_resume')`,
+    ).bind(since),
     env.DB.prepare("SELECT COUNT(*) AS count, COUNT(DISTINCT user_id) AS users, COALESCE(SUM(stars), 0) AS stars FROM payments"),
     env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(stars), 0) AS stars FROM refunds WHERE status='completed'"),
     env.DB.prepare(
@@ -569,6 +574,7 @@ async function adminStatsMessage(env) {
   });
   const opens = metric("mini_app_open");
   const starts = metric("game_start");
+  const resumes = metric("game_resume");
   const levelOne = metric("level_complete_1");
   const completions = metric("game_complete");
   const shares = metric("share_sent");
@@ -578,14 +584,17 @@ async function adminStatsMessage(env) {
   const paymentRow = payments.results?.[0] || {};
   const refundRow = refunds.results?.[0] || {};
   const referralRow = referrals.results?.[0] || {};
+  const activeRow = activePlayers.results?.[0] || {};
   const top = (topReferrers.results || []).map((row, index) =>
     `${index + 1}. ${displayName(row)} — ${Number(row.qualified)} qualified (+${Number(row.qualified_24h || 0)} in 24h)`,
   ).join("\n") || "No qualified referrals yet.";
   return `📊 TRAP STATS\n\n` +
-    `Players total: ${Number(players.results?.[0]?.total || 0)}\n` +
-    `Tracked Mini App users: ${opens.all} (${opens.seven} in 7d)\n` +
-    `Started a run: ${starts.all} · ${percentage(starts.all, opens.all)} of opens\n` +
-    `Cleared Level 1: ${levelOne.all} · ${percentage(levelOne.all, starts.all)} of starters\n` +
+    `Players all-time: ${Number(players.results?.[0]?.total || 0)}\n` +
+    `Mini App since tracking: ${opens.all} users · ${opens.events} opens (${opens.seven} users in 7d)\n` +
+    `New runs started: ${starts.events} by ${starts.all} players\n` +
+    `Runs resumed: ${resumes.events} by ${resumes.all} players\n` +
+    `Active run players: ${Number(activeRow.users || 0)} (${Number(activeRow.users_7d || 0)} in 7d)\n` +
+    `Cleared Level 1: ${levelOne.all} · ${percentage(levelOne.all, Number(activeRow.users || 0))} of active run players\n` +
     `Completed game: ${completions.all}\n` +
     `Deaths tracked: ${deaths.value}\n` +
     `Reached store: ${stores.all} players\n` +
