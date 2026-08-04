@@ -3,6 +3,7 @@ import gameHtml from "./trap.html";
 const SESSION_TTL = 60 * 60 * 24 * 30;
 const MINI_APP_AUTH_MAX_AGE = 60 * 60 * 24;
 const LIFE_PACKS = { 10: 1, 50: 7, 100: 15 };
+const LIFE_BALANCE_VERSION = 2;
 let schemaReady;
 
 const SCHEMA = [
@@ -106,6 +107,7 @@ function defaultProgress() {
     deaths: 0,
     lives: 3,
     paidLives: 0,
+    lifeBalanceVersion: LIFE_BALANCE_VERSION,
     coins: 0,
     got: [],
     bonusLives: [],
@@ -123,8 +125,12 @@ function sanitizeProgress(raw) {
   progress.level = clampInt(raw.level, 0, 9);
   progress.checkpoint = clampInt(raw.checkpoint, 0, 30);
   progress.deaths = clampInt(raw.deaths, 0, 10_000_000);
-  progress.lives = clampInt(raw.lives, 0, 999);
-  progress.paidLives = clampInt(raw.paidLives, 0, progress.lives);
+  const rawLives = clampInt(raw.lives, 0, 999);
+  const rawPaidLives = clampInt(raw.paidLives, 0, 999);
+  const separateBalances = clampInt(raw.lifeBalanceVersion, 0, LIFE_BALANCE_VERSION) >= LIFE_BALANCE_VERSION;
+  progress.lives = separateBalances || rawPaidLives > rawLives ? rawLives : Math.max(0, rawLives - rawPaidLives);
+  progress.paidLives = rawPaidLives;
+  progress.lifeBalanceVersion = LIFE_BALANCE_VERSION;
   progress.coins = clampInt(raw.coins, 0, 100);
   progress.hiddenOn = Boolean(raw.hiddenOn);
   progress.reqKnown = Boolean(raw.reqKnown);
@@ -142,12 +148,15 @@ function sanitizeProgress(raw) {
 function parseProgress(value) {
   try {
     const raw = JSON.parse(value);
+    const isObject = raw && typeof raw === "object" && !Array.isArray(raw);
     return {
       progress: sanitizeProgress(raw),
-      needsPaidLivesMigration: !raw || typeof raw !== "object" || !Object.prototype.hasOwnProperty.call(raw, "paidLives"),
+      hasPaidLives: Boolean(isObject && Object.prototype.hasOwnProperty.call(raw, "paidLives")),
+      legacyLives: clampInt(isObject ? raw.lives : 3, 0, 999, 3),
+      needsLifeBalanceMigration: !isObject || clampInt(raw.lifeBalanceVersion, 0, LIFE_BALANCE_VERSION) < LIFE_BALANCE_VERSION,
     };
   } catch {
-    return { progress: defaultProgress(), needsPaidLivesMigration: true };
+    return { progress: defaultProgress(), hasPaidLives: false, legacyLives: 3, needsLifeBalanceMigration: true };
   }
 }
 
@@ -203,10 +212,13 @@ async function getPlayer(env, userId) {
   const row = await env.DB.prepare("SELECT * FROM players WHERE user_id=?").bind(userId).first();
   if (!row) return null;
   const parsed = parseProgress(row.progress_json);
-  if (parsed.needsPaidLivesMigration) {
-    const purchases = await env.DB.prepare("SELECT COALESCE(SUM(lives), 0) AS lives FROM payments WHERE user_id=?")
-      .bind(userId).first();
-    parsed.progress.paidLives = Math.min(parsed.progress.lives, clampInt(purchases?.lives, 0, 999));
+  if (parsed.needsLifeBalanceMigration) {
+    if (!parsed.hasPaidLives) {
+      const purchases = await env.DB.prepare("SELECT COALESCE(SUM(lives), 0) AS lives FROM payments WHERE user_id=?")
+        .bind(userId).first();
+      parsed.progress.paidLives = Math.min(parsed.legacyLives, clampInt(purchases?.lives, 0, 999));
+      parsed.progress.lives = Math.max(0, parsed.legacyLives - parsed.progress.paidLives);
+    }
     await env.DB.prepare("UPDATE players SET progress_json=? WHERE user_id=?")
       .bind(JSON.stringify(parsed.progress), userId).run();
   }
@@ -341,8 +353,7 @@ async function applySuccessfulPayment(env, message) {
   const player = await getPlayer(env, Number(invoice.user_id));
   if (!player) return;
   const progress = player.progress;
-  progress.lives = clampInt(progress.lives + Number(invoice.lives), 0, 999);
-  progress.paidLives = clampInt(progress.paidLives + Number(invoice.lives), 0, progress.lives);
+  progress.paidLives = clampInt(progress.paidLives + Number(invoice.lives), 0, 999);
   progress.screen = "level_start";
   await env.DB.batch([
     env.DB.prepare("INSERT OR IGNORE INTO payments(telegram_charge_id, user_id, payload, stars, lives, created_at) VALUES (?, ?, ?, ?, ?, ?)")
@@ -440,7 +451,7 @@ async function handleApi(request, env, url) {
     const submittedPaidLives = Object.prototype.hasOwnProperty.call(body.progress || {}, "paidLives");
     progress.paidLives = submittedPaidLives
       ? Math.min(progress.paidLives, current.progress.paidLives)
-      : Math.min(progress.lives, current.progress.paidLives);
+      : current.progress.paidLives;
     const result = await env.DB.prepare(
       "UPDATE players SET progress_json=?, updated_at=? WHERE user_id=? AND payment_version=?",
     ).bind(JSON.stringify(progress), now(), userId, clampInt(body.payment_version, 0, 1_000_000)).run();
@@ -479,7 +490,6 @@ async function handleApi(request, env, url) {
     const player = await getPlayer(env, userId);
     const fresh = defaultProgress();
     fresh.paidLives = player.progress.paidLives;
-    fresh.lives = clampInt(fresh.lives + fresh.paidLives, 0, 999);
     const result = await env.DB.prepare("UPDATE players SET progress_json=?, updated_at=? WHERE user_id=? AND payment_version=?")
       .bind(JSON.stringify(fresh), now(), userId, player.payment_version).run();
     const updated = await getPlayer(env, userId);

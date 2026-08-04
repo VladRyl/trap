@@ -26,7 +26,7 @@
     mix-blend-mode:multiply}
 
   #hud{width:min(100%,560px);min-height:68px;padding:12px 14px 10px;display:grid;
-       grid-template-columns:1.2fr .9fr .78fr .78fr auto;align-items:end;gap:8px;flex:0 0 auto;
+       grid-template-columns:1.2fr .9fr .78fr .78fr auto;align-items:start;gap:8px;flex:0 0 auto;
        background:linear-gradient(180deg,rgba(18,21,28,.96),rgba(7,9,13,.86));
        border-bottom:1px solid #292128;box-shadow:0 8px 28px rgba(0,0,0,.38);z-index:2}
   #lvl{font-size:10px;line-height:1.4;letter-spacing:.18em;text-transform:uppercase;
@@ -215,7 +215,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v27</div>
+<div id="versionTag">v28</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -224,6 +224,7 @@
 
 /* ================= константи ================= */
 const FW=16, FH=14, GROUND_Y=11;
+const LIFE_BALANCE_VERSION=2;
 
 // ===== BETA TEST =====
 // true  = нескінченні життя для тестування
@@ -231,6 +232,7 @@ const FW=16, FH=14, GROUND_Y=11;
 const URL_PARAMS=new URLSearchParams(location.search);
 const LOCAL_TEST_HOSTS=new Set(['localhost','127.0.0.1','::1']);
 const BETA_TEST_MODE=URL_PARAMS.get('beta')==='1'&&LOCAL_TEST_HOSTS.has(location.hostname);
+const SHOW_TEST_LIFE_BALANCE=BETA_TEST_MODE&&URL_PARAMS.has('testLives');
 let TG_SESSION=URL_PARAMS.get('tg_session')||'';
 const API_BASE=(URL_PARAMS.get('api')||((location.protocol==='http:'||location.protocol==='https:')?location.origin:'')).replace(/\/$/,'');
 let HAS_TELEGRAM_BACKEND=Boolean(TG_SESSION&&API_BASE);
@@ -1080,15 +1082,18 @@ const state={
 const p={x:1,y:GROUND_Y-PH,vx:0,vy:0,onG:false,coyote:0,buf:0,face:1,anim:0,airVx:0,touchJump:false};
 
 function updateLives(){
-  lnum.textContent=BETA_TEST_MODE?'∞':state.lives;
-  paidnum.textContent=!BETA_TEST_MODE&&state.paidLives>0?state.paidLives+' PAID':'';
-  lbox.title=BETA_TEST_MODE?'BETA TEST: infinite lives':state.paidLives>0
-    ? state.lives+' lives remaining · '+state.paidLives+' purchased'
+  lnum.textContent=BETA_TEST_MODE&&!SHOW_TEST_LIFE_BALANCE?'∞':state.lives;
+  paidnum.textContent=(!BETA_TEST_MODE||SHOW_TEST_LIFE_BALANCE)&&state.paidLives>0?state.paidLives+' PAID':'';
+  lbox.title=BETA_TEST_MODE&&!SHOW_TEST_LIFE_BALANCE?'BETA TEST: infinite lives':state.paidLives>0
+    ? state.lives+' regular lives · '+state.paidLives+' purchased lives'
     : 'Lives remaining';
   lbox.classList.add('bump'); setTimeout(()=>lbox.classList.remove('bump'),110);
 }
 function resetRun(){
-  state.deaths=0; state.lives=3+state.paidLives; state.bonusLives=new Set(); state.gameOverPending=false;
+  state.deaths=0;
+  state.lives=SHOW_TEST_LIFE_BALANCE?Math.max(0,Number(URL_PARAMS.get('testLives'))||0):3;
+  if(SHOW_TEST_LIFE_BALANCE) state.paidLives=Math.max(0,Number(URL_PARAMS.get('testPaidLives'))||0);
+  state.bonusLives=new Set(); state.gameOverPending=false;
   dnum.textContent='0'; updateLives();
 }
 function buildGrid(){
@@ -1148,6 +1153,7 @@ function loadLevel(i){
 function serializeProgress(screen='playing'){
   return {
     level:LI, checkpoint:state.cp, deaths:state.deaths, lives:state.lives, paidLives:state.paidLives,
+    lifeBalanceVersion:LIFE_BALANCE_VERSION,
     coins:state.coins, got:[...state.got], bonusLives:[...state.bonusLives],
     hiddenOn:state.hiddenOn, reqKnown:state.reqKnown, flags:{...state.flags},
     screen, completed:screen==='game_complete'
@@ -1263,7 +1269,7 @@ async function persistSnapshot(progress,keepalive=false){
   }catch(err){
     if(err.status===409&&err.data){
       remotePaymentVersion=Number(err.data.payment_version)||remotePaymentVersion;
-      if(err.data.progress&&Number(err.data.progress.lives)>state.lives&&state.won) resumeAfterPayment(err.data.progress);
+      if(err.data.progress&&lifeTotal(err.data.progress)>lifeTotal(state)&&state.won) resumeAfterPayment(err.data.progress);
     }
   }finally{ saveInFlight=false; }
 }
@@ -1285,7 +1291,7 @@ function applyProgress(progress){
   state.cp=Math.max(0,Math.min(L.checks.length-1,Number(progress.checkpoint)||0));
   state.deaths=Math.max(0,Number(progress.deaths)||0);
   state.lives=Math.max(0,Number(progress.lives)||0);
-  state.paidLives=Math.max(0,Math.min(state.lives,Number(progress.paidLives)||0));
+  state.paidLives=Math.max(0,Number(progress.paidLives)||0);
   state.coins=Math.max(0,Number(progress.coins)||0);
   state.req=L.req; state.reqKnown=Boolean(progress.reqKnown);
   state.got=new Set(Array.isArray(progress.got)?progress.got:[]);
@@ -1297,18 +1303,21 @@ function applyProgress(progress){
   STATE_READY_FOR_WRITES=true;
   return true;
 }
+function lifeTotal(source){
+  return Math.max(0,Number(source&&source.lives)||0)+Math.max(0,Number(source&&source.paidLives)||0);
+}
 function showResume(progress){
   if(BETA_TEST_MODE||!progress) return;
   if(progress.completed){
     state.paidLives=Math.max(0,Number(progress.paidLives)||0);
-    state.lives=3+state.paidLives; updateLives();
+    state.lives=3; updateLives();
     if(state.paidLives>0){
       resumeInfo.innerHTML='<b style="color:var(--gold)">PURCHASED RESERVE</b><br>'+state.paidLives+' paid '+(state.paidLives===1?'life':'lives')+' saved · new run starts with 3 free lives';
       resumeInfo.classList.add('show');
     }
     return;
   }
-  if(Number(progress.lives)<=0){
+  if(lifeTotal(progress)<=0){
     resumeProgress=null; resumeInfo.classList.remove('show');
     if(applyProgress(progress)) showGameOverOverlay();
     return;
@@ -1359,7 +1368,7 @@ async function refreshRemoteState(resume=false){
   if(!HAS_TELEGRAM_BACKEND) return;
   try{
     const data=await apiRequest('/api/state'); remotePaymentVersion=Number(data.payment_version)||0;
-    if(data.progress){ localSave(data.progress); if(resume&&Number(data.progress.lives)>0) resumeAfterPayment(data.progress); }
+    if(data.progress){ localSave(data.progress); if(resume&&lifeTotal(data.progress)>0) resumeAfterPayment(data.progress); }
   }catch(_){ }
 }
 function resumeAfterPayment(progress){
@@ -1644,11 +1653,10 @@ function die(){
   spawnDeathFx();
   state.dead=0.88; state.deaths++;
   if(!BETA_TEST_MODE){
-    const freeLives=Math.max(0,state.lives-state.paidLives);
-    state.lives=Math.max(0,state.lives-1);
-    if(freeLives<=0&&state.paidLives>0) state.paidLives--;
+    if(state.lives>0) state.lives--;
+    else if(state.paidLives>0) state.paidLives--;
   }
-  state.gameOverPending=!BETA_TEST_MODE&&state.lives<=0;
+  state.gameOverPending=!BETA_TEST_MODE&&state.lives<=0&&state.paidLives<=0;
   state.shake=0.72; state.flash=0.46;
   dnum.textContent=state.deaths; updateLives();
   queueSave(state.gameOverPending?'game_over':'playing',true);
@@ -2093,18 +2101,25 @@ ov.addEventListener('pointerdown',activateOverlay,{passive:false,capture:true});
 ov.addEventListener('click',activateOverlay,{passive:false,capture:true});
 ovB.addEventListener('touchend',activateOverlay,{passive:false});
 ovB.addEventListener('pointerup',activateOverlay,{passive:false});
-loadLevel(0); render(); initializeSave();
+loadLevel(0);
+if(BETA_TEST_MODE&&URL_PARAMS.has('testLives')){
+  state.lives=Math.max(0,Number(URL_PARAMS.get('testLives'))||0);
+  state.paidLives=Math.max(0,Number(URL_PARAMS.get('testPaidLives'))||0);
+  updateLives();
+}
+render(); initializeSave();
 if(BETA_TEST_MODE){
   window.__TRAP_TEST__={
     load(i){ ov.classList.add('hidden'); state.running=true; loadLevel(Math.max(0,Math.min(LEVELS.length-1,i))); },
     snapshot(){ return {level:LI,x:p.x,y:p.y,vx:p.vx,vy:p.vy,onG:p.onG,dead:state.dead,running:state.running,overlayHidden:ov.classList.contains('hidden'),grid: grid.map(r=>r.slice())}; },
     setPlayer(x,y=GROUND_Y-PH){ p.x=x;p.y=y;p.vx=0;p.vy=0;p.airVx=0;p.onG=true;p.face=1;p.buf=0; },
     gotoCheckpoint(i){ state.cp=Math.max(0,Math.min(L.checks.length-1,i)); resetLife(); },
+    setLives(lives,paidLives=0){ state.lives=Math.max(0,Number(lives)||0); state.paidLives=Math.max(0,Number(paidLives)||0); updateLives(); },
     holdRight(on=true){ keys.r=!!on; if(on) keys.l=false; },
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v27-store-zero-balance-gate'
+    buildId:'v28-separate-life-balances'
   };
 }
 })();

@@ -78,6 +78,7 @@ SESSION_TTL = 60 * 60 * 24 * 30
 
 # Balanced progression: larger packs give a modest discount.
 LIFE_PACKS: dict[int, int] = {10: 1, 50: 7, 100: 15}
+LIFE_BALANCE_VERSION = 2
 API = f"https://api.telegram.org/bot{TOKEN}/"
 DB_LOCK = threading.RLock()
 
@@ -93,6 +94,7 @@ def default_progress() -> dict[str, Any]:
         "deaths": 0,
         "lives": 3,
         "paidLives": 0,
+        "lifeBalanceVersion": LIFE_BALANCE_VERSION,
         "coins": 0,
         "got": [],
         "bonusLives": [],
@@ -252,14 +254,22 @@ def get_player(user_id: int) -> dict[str, Any]:
         raw_progress = json.loads(row["progress_json"])
     except Exception:
         raw_progress = {}
-    needs_paid_lives_migration = not isinstance(raw_progress, dict) or "paidLives" not in raw_progress
+    is_object = isinstance(raw_progress, dict)
+    has_paid_lives = is_object and "paidLives" in raw_progress
+    legacy_lives = clamp_int(raw_progress.get("lives") if is_object else 3, 0, 999, 3)
+    needs_life_balance_migration = (
+        not is_object
+        or clamp_int(raw_progress.get("lifeBalanceVersion"), 0, LIFE_BALANCE_VERSION) < LIFE_BALANCE_VERSION
+    )
     progress = sanitize_progress(raw_progress)
-    if needs_paid_lives_migration:
+    if needs_life_balance_migration:
         with DB_LOCK, db_connect() as con:
-            purchases = con.execute(
-                "SELECT COALESCE(SUM(lives), 0) FROM payments WHERE user_id=?", (user_id,)
-            ).fetchone()[0]
-            progress["paidLives"] = min(progress["lives"], clamp_int(purchases, 0, 999))
+            if not has_paid_lives:
+                purchases = con.execute(
+                    "SELECT COALESCE(SUM(lives), 0) FROM payments WHERE user_id=?", (user_id,)
+                ).fetchone()[0]
+                progress["paidLives"] = min(legacy_lives, clamp_int(purchases, 0, 999))
+                progress["lives"] = max(0, legacy_lives - progress["paidLives"])
             con.execute(
                 "UPDATE players SET progress_json=? WHERE user_id=?",
                 (json.dumps(progress, ensure_ascii=False), user_id),
@@ -292,8 +302,17 @@ def sanitize_progress(raw: Any) -> dict[str, Any]:
     progress["level"] = clamp_int(raw.get("level"), 0, 9)
     progress["checkpoint"] = clamp_int(raw.get("checkpoint"), 0, 30)
     progress["deaths"] = clamp_int(raw.get("deaths"), 0, 10_000_000)
-    progress["lives"] = clamp_int(raw.get("lives"), 0, 999)
-    progress["paidLives"] = clamp_int(raw.get("paidLives"), 0, progress["lives"])
+    raw_lives = clamp_int(raw.get("lives"), 0, 999)
+    raw_paid_lives = clamp_int(raw.get("paidLives"), 0, 999)
+    separate_balances = (
+        clamp_int(raw.get("lifeBalanceVersion"), 0, LIFE_BALANCE_VERSION) >= LIFE_BALANCE_VERSION
+    )
+    progress["lives"] = (
+        raw_lives if separate_balances or raw_paid_lives > raw_lives
+        else max(0, raw_lives - raw_paid_lives)
+    )
+    progress["paidLives"] = raw_paid_lives
+    progress["lifeBalanceVersion"] = LIFE_BALANCE_VERSION
     progress["coins"] = clamp_int(raw.get("coins"), 0, 100)
     progress["hiddenOn"] = bool(raw.get("hiddenOn"))
     progress["reqKnown"] = bool(raw.get("reqKnown"))
@@ -328,7 +347,7 @@ def save_progress(user_id: int, raw: Any, payment_version: int) -> tuple[bool, d
         if submitted_paid_lives:
             progress["paidLives"] = min(progress["paidLives"], current_progress["paidLives"])
         else:
-            progress["paidLives"] = min(progress["lives"], current_progress["paidLives"])
+            progress["paidLives"] = current_progress["paidLives"]
         con.execute(
             "UPDATE players SET progress_json=?, updated_at=? WHERE user_id=?",
             (json.dumps(progress, ensure_ascii=False), now(), user_id),
@@ -519,9 +538,8 @@ def apply_successful_payment(msg: dict[str, Any]) -> None:
             progress = sanitize_progress(json.loads(player["progress_json"]))
         except Exception:
             progress = default_progress()
-        progress["lives"] = clamp_int(progress.get("lives", 0) + int(invoice["lives"]), 0, 999)
         progress["paidLives"] = clamp_int(
-            progress.get("paidLives", 0) + int(invoice["lives"]), 0, progress["lives"]
+            progress.get("paidLives", 0) + int(invoice["lives"]), 0, 999
         )
         progress["screen"] = "level_start"
         con.execute(
@@ -763,7 +781,6 @@ class GameHTTPHandler(BaseHTTPRequestHandler):
             player = get_player(user_id)
             fresh = default_progress()
             fresh["paidLives"] = int(player["progress"].get("paidLives", 0))
-            fresh["lives"] = clamp_int(fresh["lives"] + fresh["paidLives"], 0, 999)
             ok, updated = save_progress(user_id, fresh, player["payment_version"])
             self._json(200 if ok else 409, {"ok": ok, **updated})
             return
