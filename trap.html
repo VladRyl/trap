@@ -71,6 +71,9 @@
            rgba(5,7,10,.965);display:flex;flex-direction:column;align-items:center;justify-content:center;
            gap:18px;text-align:center;padding:32px;z-index:30}
   #overlay.hidden{display:none}
+  #overlay.scrollable{justify-content:flex-start;overflow-y:auto;overscroll-behavior-y:contain;
+                      -webkit-overflow-scrolling:touch;touch-action:pan-y;
+                      padding-top:max(32px,env(safe-area-inset-top));padding-bottom:max(32px,env(safe-area-inset-bottom))}
   #ovTitle{font-family:"Arial Narrow",Impact,sans-serif;font-size:clamp(42px,11vw,70px);
            font-weight:700;letter-spacing:.06em;line-height:.9;color:#eee5d4;
            text-shadow:3px 4px 0 #3f0d13,0 0 24px rgba(190,25,30,.35)}
@@ -256,7 +259,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v32</div>
+<div id="versionTag">v33</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -1256,6 +1259,11 @@ async function trackEvent(event,details={}){
 function escapeHtml(value){
   return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
+function updateOverlayLayout(){
+  const scrollable=shareRewardCard.classList.contains('show')||lifeStore.classList.contains('show');
+  ov.classList.toggle('scrollable',scrollable);
+  if(scrollable) ov.scrollTop=0;
+}
 function setShareVisible(visible,context='',level=LI+1,deaths=state.deaths){
   overlayShareResult=visible?{context,level:Number(level)||1,deaths:Number(deaths)||0}:null;
   shareRewardCard.classList.toggle('show',Boolean(visible));
@@ -1263,6 +1271,7 @@ function setShareVisible(visible,context='',level=LI+1,deaths=state.deaths){
   shareChallengeButton.classList.toggle('show',Boolean(visible));
   shareChallengeButton.disabled=false;
   shareStatus.textContent=''; shareStatus.classList.remove('show');
+  updateOverlayLayout();
 }
 async function shareChallengeResult(result,button,statusElement){
   if(!result||button.disabled) return;
@@ -1504,6 +1513,7 @@ function showBlockedGate(){
 function setLifeStoreVisible(visible){
   const show=Boolean(visible&&!BETA_TEST_MODE&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0);
   lifeStore.classList.toggle('show',show); lifeStore.setAttribute('aria-hidden',show?'false':'true');
+  updateOverlayLayout();
   if(show){
     loadTerms();
     const key=LI+':'+state.deaths;
@@ -2275,7 +2285,8 @@ function go(){
 let overlayActivationAt=-1000;
 function activateOverlay(e){
   if(ov.classList.contains('hidden')||state.running||ovB.disabled) return;
-  if(e&&e.target&&e.target.closest&&(e.target.closest('#betaLevelPicker')||e.target.closest('#lifeStore')||e.target.closest('#shareRewardCard')||e.target.closest('.scoreControl')||e.target.closest('.shareChallengeBtn')||e.target.closest('#scoresPanel'))) return;
+  // The overlay is also the scroll surface. Only the action button may start or restart a run.
+  if(e&&(!e.target||!e.target.closest||!e.target.closest('#ovBtn'))) return;
   const now=performance.now();
   if(now-overlayActivationAt<180) return;
   overlayActivationAt=now;
