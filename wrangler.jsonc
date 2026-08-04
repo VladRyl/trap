@@ -7,7 +7,8 @@
   "compatibility_flags": ["global_fetch_strictly_public"],
   "vars": {
     "GAME_SHORT_NAME": "trap_game",
-    "GAME_BETA": "0"
+    "GAME_BETA": "0",
+    "PUBLIC_BASE_URL": "https://trap-game.trap-games.workers.dev"
   },
   "d1_databases": [
     {
