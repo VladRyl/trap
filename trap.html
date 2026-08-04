@@ -1272,7 +1272,7 @@ async function shareChallengeResult(result,button,statusElement){
       });
       return;
     }
-    const text='☠️ I reached Level '+result.level+' with '+result.deaths+' deaths in TRAP. Can you do better?';
+    const text=data.shareText||('☠️ I reached Level '+result.level+' with '+result.deaths+' deaths in TRAP. Can you do better?');
     const fallback='https://t.me/share/url?url='+encodeURIComponent(data.link)+'&text='+encodeURIComponent(text);
     if(TELEGRAM_WEB_APP&&typeof TELEGRAM_WEB_APP.openTelegramLink==='function') TELEGRAM_WEB_APP.openTelegramLink(fallback);
     else location.assign(fallback);
@@ -2293,7 +2293,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v31-support-blocklist'
+    buildId:'v32-photo-referral-share'
   };
 }
 })();

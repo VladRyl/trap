@@ -23,6 +23,11 @@
       "type": "Text",
       "globs": ["**/*.html"],
       "fallthrough": true
+    },
+    {
+      "type": "Data",
+      "globs": ["**/*.jpg"],
+      "fallthrough": true
     }
   ]
 }

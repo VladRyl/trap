@@ -1,4 +1,5 @@
 import gameHtml from "./trap.html";
+import trapShareImage from "./assets/trap-share-1280x720.jpg";
 
 const SESSION_TTL = 60 * 60 * 24 * 30;
 const MINI_APP_AUTH_MAX_AGE = 60 * 60 * 24;
@@ -528,16 +529,24 @@ async function createPreparedChallenge(env, userId, body) {
   const messageText = context === "game_complete"
     ? `🏆 ${name} survived all 10 rooms of TRAP with ${deaths} deaths.\nCan you beat this run?`
     : `☠️ ${name} reached Level ${level} in TRAP with ${deaths} deaths.\nCan you do better?`;
+  const shareText = `${messageText}\n\n` +
+    `🎮 Play @trap_game_bot through my personal link:\n${link}\n\n` +
+    "🎁 Clear Level 1 to give me +1 bonus life. Then share your own challenge to earn bonus lives from your friends.";
+  const imageUrl = new URL("/assets/trap-share-1280x720.jpg", env.PUBLIC_BASE_URL || "https://trap-game.trap-games.workers.dev").toString();
   const prepared = await telegram(env, "savePreparedInlineMessage", {
     user_id: userId,
     result: {
-      type: "article",
+      type: "photo",
       id: crypto.randomUUID(),
+      photo_url: imageUrl,
+      thumbnail_url: imageUrl,
+      photo_width: 1280,
+      photo_height: 720,
       title: "Challenge a friend in TRAP",
       description: `Level ${level} · ${deaths} deaths`,
-      input_message_content: { message_text: messageText },
+      caption: shareText,
       reply_markup: {
-        inline_keyboard: [[{ text: "🎮 BEAT MY SCORE", url: link }]],
+        inline_keyboard: [[{ text: "🎮 PLAY TRAP", url: link }]],
       },
     },
     allow_user_chats: true,
@@ -548,7 +557,7 @@ async function createPreparedChallenge(env, userId, body) {
     level,
     metadata: { context, deaths, code },
   });
-  return { messageId: prepared.id, expiresAt: prepared.expiration_date, link, level, deaths };
+  return { messageId: prepared.id, expiresAt: prepared.expiration_date, link, shareText, level, deaths };
 }
 
 function percentage(numerator, denominator) {
@@ -1573,6 +1582,16 @@ export default {
       }
       if (url.pathname === "/health") {
         return json({ ok: true, service: "trap-game", storage: "d1", telegram_webhook: Boolean(env.BOT_TOKEN && env.WEBHOOK_SECRET) });
+      }
+      if (url.pathname === "/assets/trap-share-1280x720.jpg" && ["GET", "HEAD"].includes(request.method)) {
+        return new Response(request.method === "HEAD" ? null : trapShareImage, {
+          headers: {
+            "content-type": "image/jpeg",
+            "content-length": String(trapShareImage.byteLength),
+            "cache-control": "public, max-age=31536000, immutable",
+            "x-content-type-options": "nosniff",
+          },
+        });
       }
       if ((url.pathname === "/" || url.pathname === "/game") && ["GET", "HEAD"].includes(request.method)) {
         const localHost = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
