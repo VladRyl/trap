@@ -480,11 +480,17 @@ export default {
         return json({ ok: true, service: "trap-game", storage: "d1", telegram_webhook: Boolean(env.BOT_TOKEN && env.WEBHOOK_SECRET) });
       }
       if ((url.pathname === "/" || url.pathname === "/game") && ["GET", "HEAD"].includes(request.method)) {
+        if (url.searchParams.has("beta")) {
+          url.searchParams.delete("beta");
+          return Response.redirect(url.toString(), 302);
+        }
         return new Response(request.method === "HEAD" ? null : gameHtml, {
           headers: {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-cache, no-store, must-revalidate",
             "x-content-type-options": "nosniff",
+            "x-robots-tag": "noindex, nofollow, noarchive",
+            "referrer-policy": "no-referrer",
           },
         });
       }

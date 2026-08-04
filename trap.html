@@ -213,7 +213,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v23</div>
+<div id="versionTag">v24</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -227,13 +227,16 @@ const FW=16, FH=14, GROUND_Y=11;
 // true  = нескінченні життя для тестування
 // false = звичайний режим із життями
 const URL_PARAMS=new URLSearchParams(location.search);
-const BETA_TEST_MODE = URL_PARAMS.get('beta')==='1';
+const LOCAL_TEST_HOSTS=new Set(['localhost','127.0.0.1','::1']);
+const BETA_TEST_MODE=URL_PARAMS.get('beta')==='1'&&LOCAL_TEST_HOSTS.has(location.hostname);
 let TG_SESSION=URL_PARAMS.get('tg_session')||'';
 const API_BASE=(URL_PARAMS.get('api')||((location.protocol==='http:'||location.protocol==='https:')?location.origin:'')).replace(/\/$/,'');
 let HAS_TELEGRAM_BACKEND=Boolean(TG_SESSION&&API_BASE);
 const TELEGRAM_WEB_APP=window.Telegram&&Telegram.WebApp;
 const MINI_APP_INIT_DATA=String(TELEGRAM_WEB_APP&&TELEGRAM_WEB_APP.initData||'');
 const IS_MINI_APP=Boolean(MINI_APP_INIT_DATA);
+const TELEGRAM_START_URL='https://t.me/trap_game_bot?startapp';
+let SESSION_VERIFIED=false;
 const LOCAL_SAVE_KEY='trap_progress_v18';
 
 if(TELEGRAM_WEB_APP){
@@ -1302,22 +1305,32 @@ function showResume(progress){
   ovB.textContent='Continue Level '+level; ovB.dataset.act='resume';
 }
 async function initializeSave(){
-  if(BETA_TEST_MODE){ ovB.disabled=false; return; }
+  if(BETA_TEST_MODE){ SESSION_VERIFIED=true; ovB.disabled=false; return; }
   ovB.disabled=true; ovB.textContent='Loading save…';
   await initializeTelegramSession();
+  if(!HAS_TELEGRAM_BACKEND){ showTelegramGate(); return; }
   let savedProgress=null;
   const local=localLoad();
   if(local){ remotePaymentVersion=Number(local.payment_version)||0; savedProgress=local.progress; }
-  if(HAS_TELEGRAM_BACKEND){
-    try{
-      const data=await apiRequest('/api/state');
-      remotePaymentVersion=Number(data.payment_version)||0;
-      if(data.progress){ localSave(data.progress); savedProgress=data.progress; }
-    }catch(_){ }
+  try{
+    const data=await apiRequest('/api/state');
+    SESSION_VERIFIED=true;
+    remotePaymentVersion=Number(data.payment_version)||0;
+    if(data.progress){ localSave(data.progress); savedProgress=data.progress; }
+  }catch(_){
+    TG_SESSION=''; HAS_TELEGRAM_BACKEND=false; SESSION_VERIFIED=false;
+    showTelegramGate(); return;
   }
   if(savedProgress) showResume(savedProgress);
   if(!resumeProgress&&!state.won){ ovB.textContent='Start'; ovB.dataset.act='start'; }
   ovB.disabled=false;
+}
+function showTelegramGate(){
+  state.running=false; resumeProgress=null; resumeInfo.classList.remove('show');
+  setLifeStoreVisible(false); setBetaPickerVisible(false); ov.classList.remove('hidden');
+  ovT.textContent='TELEGRAM ONLY';
+  ovS.innerHTML='Open TRAP from <b style="color:var(--gold)">@trap_game_bot</b> to verify your session.';
+  ovB.textContent='Open in Telegram'; ovB.dataset.act='telegram'; ovB.disabled=false;
 }
 function setLifeStoreVisible(visible){
   const show=Boolean(visible&&!BETA_TEST_MODE);
@@ -2010,6 +2023,10 @@ function go(){
   if(state.running) return;
   keyboardKeys.l=keyboardKeys.r=false; padKeys.l=padKeys.r=false; syncMoveKeys(); p.buf=0;
   const act=ovB.dataset.act||'start';
+  if(act==='telegram'){
+    location.assign(TELEGRAM_START_URL); return;
+  }
+  if(!SESSION_VERIFIED&&!BETA_TEST_MODE){ showTelegramGate(); return; }
   if(act==='next'){
     loadLevel(LI+1); queueSave('level_start',true); submitScore(LI+1);
   }else if(act==='resume'&&resumeProgress&&!BETA_TEST_MODE){
@@ -2061,7 +2078,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v23-main-mini-app'
+    buildId:'v24-telegram-session-gate'
   };
 }
 })();
