@@ -472,10 +472,42 @@ function supportsCopiedCaption(message) {
 function supportTicketKeyboard(ticket) {
   const buttons = [];
   if (ticket.kind === "payment") {
-    buttons.push({ text: "⭐ Refund latest", callback_data: `support:refund:${ticket.id}` });
+    buttons.push({ text: "⭐ Choose refund", callback_data: `support:refund:${ticket.id}` });
   }
   buttons.push({ text: `✅ Close #${ticket.id}`, callback_data: `support:close:${ticket.id}` });
   return { inline_keyboard: [buttons] };
+}
+
+function paymentCallbackReference(payment) {
+  const match = /^life_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+    .exec(String(payment?.payload || ""));
+  return match?.[1]?.toLowerCase() || null;
+}
+
+function paymentButtonText(payment) {
+  const date = new Intl.DateTimeFormat("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(Number(payment.created_at) * 1000));
+  const reference = paymentCallbackReference(payment);
+  return `⭐ ${payment.stars} · ${payment.lives} lives · ${date} · ${reference.slice(-6)}`;
+}
+
+function parseSupportCallbackData(value) {
+  const legacy = /^support:(refund|confirm|cancel|close):(\d+)$/.exec(String(value || ""));
+  if (legacy) return { action: legacy[1], ticketId: legacy[2], paymentReference: "" };
+  const selected = /^sr:([pc]):(\d+):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+    .exec(String(value || ""));
+  if (!selected) return null;
+  return {
+    action: selected[1].toLowerCase() === "p" ? "pick" : "confirm",
+    ticketId: selected[2],
+    paymentReference: selected[3].toLowerCase(),
+  };
 }
 
 async function supportTicketForUser(env, userId) {
@@ -715,8 +747,8 @@ async function clearSupportButtons(env, query) {
 }
 
 async function handleSupportCallback(env, query) {
-  const match = /^support:(refund|confirm|cancel|close):(\d+)$/.exec(String(query.data || ""));
-  if (!match) return false;
+  const callback = parseSupportCallbackData(query.data);
+  if (!callback) return false;
   const supportChatId = configuredId(env.SUPPORT_CHAT_ID, true);
   const adminId = configuredId(env.ADMIN_USER_ID);
   if (!supportChatId || Number(query.message?.chat?.id) !== supportChatId || Number(query.from?.id) !== adminId) {
@@ -727,8 +759,8 @@ async function handleSupportCallback(env, query) {
     });
     return true;
   }
-  const action = match[1];
-  const ticketId = clampInt(match[2], 1, Number.MAX_SAFE_INTEGER);
+  const action = callback.action;
+  const ticketId = clampInt(callback.ticketId, 1, Number.MAX_SAFE_INTEGER);
   const ticket = await env.DB.prepare("SELECT * FROM support_tickets WHERE id=?").bind(ticketId).first();
   if (!ticket || ticket.status !== "open") {
     await telegram(env, "answerCallbackQuery", {
@@ -739,7 +771,7 @@ async function handleSupportCallback(env, query) {
     await clearSupportButtons(env, query);
     return true;
   }
-  if ((action === "refund" || action === "confirm") && ticket.kind !== "payment") {
+  if (["refund", "pick", "confirm"].includes(action) && ticket.kind !== "payment") {
     await telegram(env, "answerCallbackQuery", {
       callback_query_id: query.id,
       text: `Refund is not available for GENERAL ticket #${ticketId}.`,
@@ -748,12 +780,14 @@ async function handleSupportCallback(env, query) {
     return true;
   }
   if (action === "refund") {
-    const payment = await env.DB.prepare(
+    const { results } = await env.DB.prepare(
       `SELECT p.* FROM payments p LEFT JOIN refunds r
-       ON r.telegram_charge_id=p.telegram_charge_id AND r.status='completed'
-       WHERE p.user_id=? AND r.telegram_charge_id IS NULL ORDER BY p.created_at DESC LIMIT 1`,
-    ).bind(ticket.user_id).first();
-    if (!payment) {
+       ON r.telegram_charge_id=p.telegram_charge_id
+       WHERE p.user_id=? AND (r.telegram_charge_id IS NULL OR r.status='failed')
+       ORDER BY p.created_at DESC LIMIT 10`,
+    ).bind(ticket.user_id).all();
+    const payments = results.filter((payment) => paymentCallbackReference(payment));
+    if (!payments.length) {
       await telegram(env, "answerCallbackQuery", {
         callback_query_id: query.id,
         text: "This player has no refundable purchase.",
@@ -763,15 +797,47 @@ async function handleSupportCallback(env, query) {
     }
     await telegram(env, "answerCallbackQuery", {
       callback_query_id: query.id,
-      text: "Confirm the refund below.",
+      text: "Choose the exact purchase below.",
     });
     await telegram(env, "sendMessage", {
       chat_id: supportChatId,
+      text: `Choose a purchase to refund for ticket #${ticketId}. Times are shown for Kyiv.`,
+      reply_markup: {
+        inline_keyboard: [
+          ...payments.map((payment) => [{
+            text: paymentButtonText(payment),
+            callback_data: `sr:p:${ticketId}:${paymentCallbackReference(payment)}`,
+          }]),
+          [{ text: "Cancel", callback_data: `support:cancel:${ticketId}` }],
+        ],
+      },
+    });
+    return true;
+  }
+  if (action === "pick") {
+    const payment = await env.DB.prepare(
+      `SELECT p.* FROM payments p LEFT JOIN refunds r ON r.telegram_charge_id=p.telegram_charge_id
+       WHERE p.user_id=? AND p.payload=? AND (r.telegram_charge_id IS NULL OR r.status='failed') LIMIT 1`,
+    ).bind(ticket.user_id, `life_${callback.paymentReference}`).first();
+    if (!payment) {
+      await telegram(env, "answerCallbackQuery", {
+        callback_query_id: query.id,
+        text: "This purchase is no longer refundable.",
+        show_alert: true,
+      });
+      await clearSupportButtons(env, query);
+      return true;
+    }
+    await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: "Confirm the refund below." });
+    await clearSupportButtons(env, query);
+    await telegram(env, "sendMessage", {
+      chat_id: supportChatId,
       text: `⚠️ Confirm refund of ${payment.stars} Stars for ticket #${ticketId}?\n` +
+        `Lives in purchase: ${payment.lives}\n` +
         `Player: ${ticket.user_id}\nCharge: ${payment.telegram_charge_id}`,
       reply_markup: {
         inline_keyboard: [[
-          { text: `⭐ Confirm ${payment.stars} Stars`, callback_data: `support:confirm:${ticketId}` },
+          { text: `⭐ Confirm ${payment.stars} Stars`, callback_data: `sr:c:${ticketId}:${callback.paymentReference}` },
           { text: "Cancel", callback_data: `support:cancel:${ticketId}` },
         ]],
       },
@@ -790,9 +856,37 @@ async function handleSupportCallback(env, query) {
     await telegram(env, "sendMessage", { chat_id: supportChatId, text: `✅ Ticket #${ticketId} closed.` });
     return true;
   }
+  if (!callback.paymentReference) {
+    await telegram(env, "answerCallbackQuery", {
+      callback_query_id: query.id,
+      text: "This confirmation is outdated. Tap Choose refund again.",
+      show_alert: true,
+    });
+    await clearSupportButtons(env, query);
+    return true;
+  }
+  const selectedPayment = await env.DB.prepare(
+    `SELECT p.* FROM payments p LEFT JOIN refunds r ON r.telegram_charge_id=p.telegram_charge_id
+     WHERE p.user_id=? AND p.payload=? AND (r.telegram_charge_id IS NULL OR r.status='failed') LIMIT 1`,
+  ).bind(ticket.user_id, `life_${callback.paymentReference}`).first();
+  if (!selectedPayment) {
+    await telegram(env, "answerCallbackQuery", {
+      callback_query_id: query.id,
+      text: "This purchase is no longer refundable.",
+      show_alert: true,
+    });
+    await clearSupportButtons(env, query);
+    return true;
+  }
   await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: "Processing refund…" });
   try {
-    const result = await refundPayment(env, Number(ticket.user_id), adminId, "", `Support ticket #${ticketId}`);
+    const result = await refundPayment(
+      env,
+      Number(ticket.user_id),
+      adminId,
+      selectedPayment.telegram_charge_id,
+      `Support ticket #${ticketId}`,
+    );
     await clearSupportButtons(env, query);
     await telegram(env, "sendMessage", {
       chat_id: Number(ticket.user_chat_id),
