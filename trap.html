@@ -121,6 +121,9 @@
                      letter-spacing:.14em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
   .shareChallengeBtn.show{display:block}.shareChallengeBtn:active{transform:translateY(1px);background:#2a1a10}
   .shareChallengeBtn:disabled{opacity:.45;cursor:wait}
+  #shareRewardHint{display:none;max-width:390px;margin-top:-5px;color:var(--bone-dim);font-size:9px;line-height:1.45}
+  #shareRewardHint.show{display:block}
+  #shareRewardHint strong{color:var(--gold)}
   #shareStatus{display:none;max-width:360px;color:var(--bone-dim);font-size:9px;line-height:1.4}
   #shareStatus.show{display:block}
   #scoresPanel{display:none;position:fixed;inset:0;z-index:70;align-items:center;justify-content:center;padding:18px;
@@ -215,7 +218,8 @@
     <label id="termsConsent"><input id="termsCheckbox" type="checkbox"><span>I have read and accept the TRAP Terms &amp; Refund Policy.</span></label>
     <div id="storeStatus"></div>
   </div>
-  <button id="shareChallenge" class="shareChallengeBtn" type="button">📤 Share challenge</button>
+  <button id="shareChallenge" class="shareChallengeBtn" type="button">📤 Share &amp; earn +5 lives</button>
+  <div id="shareRewardHint">Invite a <strong>new player</strong>. When they clear Level 1, <strong>you both get +5 bonus lives</strong>.</div>
   <div id="shareStatus"></div>
   <button id="scoreMenuBtn" class="scoreControl scoreMenuBtn" type="button">🏆 Scores</button>
   <button id="ovBtn" type="button"
@@ -241,7 +245,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v30</div>
+<div id="versionTag">v31</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -291,6 +295,7 @@ const cnum=document.getElementById('cnum'), creq=document.getElementById('creq')
 const ov=document.getElementById('overlay'), ovT=document.getElementById('ovTitle'),
       ovS=document.getElementById('ovSub'), ovB=document.getElementById('ovBtn');
 const shareChallengeButton=document.getElementById('shareChallenge');
+const shareRewardHint=document.getElementById('shareRewardHint');
 const shareStatus=document.getElementById('shareStatus');
 const betaLevelPicker=document.getElementById('betaLevelPicker');
 const betaLevelSelect=document.getElementById('betaLevelSelect');
@@ -1243,6 +1248,7 @@ function escapeHtml(value){
 function setShareVisible(visible,context='',level=LI+1,deaths=state.deaths){
   overlayShareResult=visible?{context,level:Number(level)||1,deaths:Number(deaths)||0}:null;
   shareChallengeButton.classList.toggle('show',Boolean(visible));
+  shareRewardHint.classList.toggle('show',Boolean(visible));
   shareChallengeButton.disabled=false;
   shareStatus.textContent=''; shareStatus.classList.remove('show');
 }
