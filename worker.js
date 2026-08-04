@@ -94,6 +94,11 @@ const SCHEMA = [
     FOREIGN KEY(ticket_id) REFERENCES support_tickets(id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_blocked_users_created ON blocked_users(created_at)`,
+  `CREATE TABLE IF NOT EXISTS bot_assets (
+    asset_key TEXT PRIMARY KEY,
+    telegram_file_id TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS refunds (
     telegram_charge_id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL,
@@ -533,15 +538,19 @@ async function createPreparedChallenge(env, userId, body) {
     `🎮 Play @trap_game_bot through my personal link:\n${link}\n\n` +
     "🎁 NEW PLAYERS ONLY: open my link and clear Level 1 to give me +1 bonus life. Existing players don't count. Share your own result to earn yours.";
   const imageUrl = new URL("/assets/trap-share-640x360-v2.jpg", env.PUBLIC_BASE_URL || "https://trap-game.trap-games.workers.dev").toString();
-  const prepared = await telegram(env, "savePreparedInlineMessage", {
+  let cachedPhotoId = null;
+  try {
+    cachedPhotoId = await getTelegramSharePhotoId(env, imageUrl);
+  } catch (error) {
+    console.error("Could not cache the challenge photo in Telegram", error);
+  }
+  const externalPhoto = { photo_url: imageUrl, thumbnail_url: imageUrl, photo_width: 640, photo_height: 360 };
+  const savePrepared = (photo) => telegram(env, "savePreparedInlineMessage", {
     user_id: userId,
     result: {
       type: "photo",
       id: crypto.randomUUID(),
-      photo_url: imageUrl,
-      thumbnail_url: imageUrl,
-      photo_width: 640,
-      photo_height: 360,
+      ...photo,
       title: "Challenge a friend in TRAP",
       description: `Level ${level} · ${deaths} deaths`,
       caption: shareText,
@@ -553,11 +562,44 @@ async function createPreparedChallenge(env, userId, body) {
     allow_group_chats: true,
     allow_channel_chats: true,
   });
+  let prepared;
+  try {
+    prepared = await savePrepared(cachedPhotoId ? { photo_file_id: cachedPhotoId } : externalPhoto);
+  } catch (error) {
+    if (!cachedPhotoId) throw error;
+    await env.DB.prepare("DELETE FROM bot_assets WHERE asset_key=? AND telegram_file_id=?")
+      .bind("challenge_photo_640x360_v2", cachedPhotoId).run();
+    prepared = await savePrepared(externalPhoto);
+  }
   await recordAnalyticsEvent(env, userId, "share_created", {
     level,
     metadata: { context, deaths, code },
   });
   return { messageId: prepared.id, expiresAt: prepared.expiration_date, link, shareText, level, deaths };
+}
+
+async function getTelegramSharePhotoId(env, imageUrl) {
+  const assetKey = "challenge_photo_640x360_v2";
+  const existing = await env.DB.prepare("SELECT telegram_file_id FROM bot_assets WHERE asset_key=?")
+    .bind(assetKey).first();
+  if (existing?.telegram_file_id) return String(existing.telegram_file_id);
+  const adminId = configuredId(env.ADMIN_USER_ID);
+  if (!adminId) return null;
+  const uploaded = await telegram(env, "sendPhoto", {
+    chat_id: adminId,
+    photo: imageUrl,
+    caption: "TRAP share image cache setup. This message will be removed automatically.",
+  });
+  const sizes = Array.isArray(uploaded.photo) ? uploaded.photo : [];
+  const fileId = String(sizes[sizes.length - 1]?.file_id || "");
+  if (!fileId) throw new Error("Telegram did not return a photo file_id.");
+  await env.DB.prepare(
+    `INSERT INTO bot_assets(asset_key, telegram_file_id, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(asset_key) DO UPDATE SET telegram_file_id=excluded.telegram_file_id, updated_at=excluded.updated_at`,
+  ).bind(assetKey, fileId, now()).run();
+  await telegram(env, "deleteMessage", { chat_id: adminId, message_id: uploaded.message_id })
+    .catch((error) => console.error("Could not delete the share cache setup message", error));
+  return fileId;
 }
 
 function percentage(numerator, denominator) {
