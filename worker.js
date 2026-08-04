@@ -469,6 +469,15 @@ function supportsCopiedCaption(message) {
   return Boolean(message.animation || message.audio || message.document || message.photo || message.video || message.voice);
 }
 
+function supportTicketKeyboard(ticket) {
+  const buttons = [];
+  if (ticket.kind === "payment") {
+    buttons.push({ text: "⭐ Refund latest", callback_data: `support:refund:${ticket.id}` });
+  }
+  buttons.push({ text: `✅ Close #${ticket.id}`, callback_data: `support:close:${ticket.id}` });
+  return { inline_keyboard: [buttons] };
+}
+
 async function supportTicketForUser(env, userId) {
   return env.DB.prepare(
     "SELECT * FROM support_tickets WHERE user_id=? AND status='open' ORDER BY id DESC LIMIT 1",
@@ -505,7 +514,8 @@ async function startSupportTicket(env, message, kind) {
       chat_id: supportChatId,
       text: `🛟 ${kind === "payment" ? "PAYMENT" : "GENERAL"} TICKET #${ticket.id}\n` +
         `Player: ${displayName(message.from)} (${username})\nUser ID: ${userId}\n\n` +
-        "Reply to a relayed message to answer anonymously. Reply /refund to refund the latest purchase, or /close to close the ticket.",
+        "Reply to a relayed message to answer anonymously. Use the ticket buttons below to manage it.",
+      reply_markup: supportTicketKeyboard(ticket),
     });
     await env.DB.prepare(
       "INSERT OR REPLACE INTO support_messages(admin_message_id, ticket_id, user_message_id, created_at) VALUES (?, ?, NULL, ?)",
@@ -658,6 +668,13 @@ async function handleSupportAdminReply(env, message) {
   }
   const command = commandName(message);
   if (command === "/refund") {
+    if (mapping.kind !== "payment") {
+      await telegram(env, "sendMessage", {
+        chat_id: supportChatId,
+        text: `⛔ Refund is only available for PAYMENT tickets. Ticket #${mapping.id} is a GENERAL ticket.`,
+      });
+      return true;
+    }
     const chargeId = String(message.text || "").trim().split(/\s+/, 2)[1] || "";
     try {
       const result = await refundPayment(env, Number(mapping.user_id), adminId, chargeId, `Support ticket #${mapping.id}`);
@@ -688,6 +705,113 @@ async function handleSupportAdminReply(env, message) {
   return true;
 }
 
+async function clearSupportButtons(env, query) {
+  if (!query.message?.chat?.id || !query.message?.message_id) return;
+  await telegram(env, "editMessageReplyMarkup", {
+    chat_id: query.message.chat.id,
+    message_id: query.message.message_id,
+    reply_markup: { inline_keyboard: [] },
+  }).catch((error) => console.error(error));
+}
+
+async function handleSupportCallback(env, query) {
+  const match = /^support:(refund|confirm|cancel|close):(\d+)$/.exec(String(query.data || ""));
+  if (!match) return false;
+  const supportChatId = configuredId(env.SUPPORT_CHAT_ID, true);
+  const adminId = configuredId(env.ADMIN_USER_ID);
+  if (!supportChatId || Number(query.message?.chat?.id) !== supportChatId || Number(query.from?.id) !== adminId) {
+    await telegram(env, "answerCallbackQuery", {
+      callback_query_id: query.id,
+      text: "Only the configured administrator can manage support tickets.",
+      show_alert: true,
+    });
+    return true;
+  }
+  const action = match[1];
+  const ticketId = clampInt(match[2], 1, Number.MAX_SAFE_INTEGER);
+  const ticket = await env.DB.prepare("SELECT * FROM support_tickets WHERE id=?").bind(ticketId).first();
+  if (!ticket || ticket.status !== "open") {
+    await telegram(env, "answerCallbackQuery", {
+      callback_query_id: query.id,
+      text: ticket ? `Ticket #${ticketId} is already closed.` : `Ticket #${ticketId} was not found.`,
+      show_alert: true,
+    });
+    await clearSupportButtons(env, query);
+    return true;
+  }
+  if ((action === "refund" || action === "confirm") && ticket.kind !== "payment") {
+    await telegram(env, "answerCallbackQuery", {
+      callback_query_id: query.id,
+      text: `Refund is not available for GENERAL ticket #${ticketId}.`,
+      show_alert: true,
+    });
+    return true;
+  }
+  if (action === "refund") {
+    const payment = await env.DB.prepare(
+      `SELECT p.* FROM payments p LEFT JOIN refunds r
+       ON r.telegram_charge_id=p.telegram_charge_id AND r.status='completed'
+       WHERE p.user_id=? AND r.telegram_charge_id IS NULL ORDER BY p.created_at DESC LIMIT 1`,
+    ).bind(ticket.user_id).first();
+    if (!payment) {
+      await telegram(env, "answerCallbackQuery", {
+        callback_query_id: query.id,
+        text: "This player has no refundable purchase.",
+        show_alert: true,
+      });
+      return true;
+    }
+    await telegram(env, "answerCallbackQuery", {
+      callback_query_id: query.id,
+      text: "Confirm the refund below.",
+    });
+    await telegram(env, "sendMessage", {
+      chat_id: supportChatId,
+      text: `⚠️ Confirm refund of ${payment.stars} Stars for ticket #${ticketId}?\n` +
+        `Player: ${ticket.user_id}\nCharge: ${payment.telegram_charge_id}`,
+      reply_markup: {
+        inline_keyboard: [[
+          { text: `⭐ Confirm ${payment.stars} Stars`, callback_data: `support:confirm:${ticketId}` },
+          { text: "Cancel", callback_data: `support:cancel:${ticketId}` },
+        ]],
+      },
+    });
+    return true;
+  }
+  if (action === "cancel") {
+    await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: "Refund cancelled." });
+    await clearSupportButtons(env, query);
+    return true;
+  }
+  if (action === "close") {
+    await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: `Closing ticket #${ticketId}…` });
+    await closeSupportTicket(env, ticket, true);
+    await clearSupportButtons(env, query);
+    await telegram(env, "sendMessage", { chat_id: supportChatId, text: `✅ Ticket #${ticketId} closed.` });
+    return true;
+  }
+  await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: "Processing refund…" });
+  try {
+    const result = await refundPayment(env, Number(ticket.user_id), adminId, "", `Support ticket #${ticketId}`);
+    await clearSupportButtons(env, query);
+    await telegram(env, "sendMessage", {
+      chat_id: Number(ticket.user_chat_id),
+      text: `⭐ Refund completed: ${result.payment.stars} Stars. ${result.removedLives ? `${result.removedLives} unused paid lives were removed.` : "No unused paid lives remained."}`,
+    });
+    await telegram(env, "sendMessage", {
+      chat_id: supportChatId,
+      text: `✅ Refunded ${result.payment.stars} Stars for ticket #${ticketId}. Charge: ${result.payment.telegram_charge_id}`,
+    });
+  } catch (error) {
+    await clearSupportButtons(env, query);
+    await telegram(env, "sendMessage", {
+      chat_id: supportChatId,
+      text: `❌ Refund failed for ticket #${ticketId}: ${String(error.message || error).slice(0, 800)}`,
+    });
+  }
+  return true;
+}
+
 async function handleTelegramUpdate(env, update, origin) {
   if (update.pre_checkout_query) {
     const [ok, error] = await validatePreCheckout(env, update.pre_checkout_query);
@@ -700,6 +824,7 @@ async function handleTelegramUpdate(env, update, origin) {
   }
   if (update.callback_query) {
     const query = update.callback_query;
+    if (await handleSupportCallback(env, query)) return;
     if (query.game_short_name === (env.GAME_SHORT_NAME || "trap_game")) {
       const token = await createSession(env, query);
       const gameUrl = new URL("/game", env.PUBLIC_BASE_URL || origin);
@@ -753,6 +878,13 @@ async function handleTelegramUpdate(env, update, origin) {
     await sendPlayButton(env, chatId, origin);
   } else if (command === "/score" || command === "/scores") {
     await sendPlayButton(env, chatId, origin, "🏆 Open TRAP and tap SCORES.");
+  } else if ((command === "/refund" || command === "/close") &&
+    Number(chatId) === configuredId(env.SUPPORT_CHAT_ID, true) &&
+    Number(userId) === configuredId(env.ADMIN_USER_ID)) {
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "Use the buttons under the ticket, or send the command as a Reply to a relayed player message.",
+    });
   } else {
     const ticket = await supportTicketForUser(env, userId);
     if (ticket) await relaySupportMessage(env, message, ticket);

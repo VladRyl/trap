@@ -18,9 +18,10 @@ Player flow:
 Admin flow:
 
 1. Reply to a relayed message; the bot copies the reply to the player without exposing the admin account.
-2. Reply `/refund` to refund the player's latest unrefunded purchase.
-3. Reply `/refund TELEGRAM_CHARGE_ID` to select a particular purchase.
-4. Reply `/close` to close the ticket.
+2. General tickets have a **Close** button. They cannot issue refunds.
+3. Payment tickets have **Refund latest** and **Close** buttons. Refunds require a second **Confirm** click showing the Stars amount.
+4. As a fallback, reply `/refund` to a relayed message in a payment ticket, reply `/refund TELEGRAM_CHARGE_ID` to select a particular purchase, or reply `/close` to close either ticket type.
+5. Standalone `/refund` and `/close` commands are intentionally rejected because they are not associated with a ticket ID.
 
 Refunds are intentionally unconditional and admin-controlled. If the player already consumed the purchased lives, the Stars are still returned and no consumed lives can be recovered. Every attempt is recorded in `refunds`; completed purchases remain in `payments` as an immutable audit trail.
 
@@ -58,4 +59,3 @@ gzip -d BACKUP.sql.gz
 ```
 
 Import into a new/test D1 database first; do not test restoration against production. A SQL export can then be applied with Wrangler's `d1 execute --file` command after reviewing the target database.
-
