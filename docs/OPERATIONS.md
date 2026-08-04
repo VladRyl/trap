@@ -40,9 +40,17 @@ myid - Show your Telegram ID
 done - Close your support ticket
 ```
 
+## Growth analytics and referrals
+
+The private `/stats` command is restricted to `ADMIN_USER_ID`; it should not be added to the public BotFather command menu. It reports the tracked Mini App funnel, payments, refunds, referral qualification and the leading referrers. Gameplay analytics begin with the release that creates `analytics_events`; earlier gameplay is not reconstructed.
+
+Challenge shares use Telegram prepared inline messages and links shaped like `https://t.me/trap_game_bot/play?startapp=r_CODE`. Attribution is accepted only for a player who did not already exist when the signed Mini App session was created. A referral grants exactly one non-transferable `rewardLives` life after the referred player clears Level 1. Self-referrals and duplicate rewards are rejected by database constraints. There is intentionally no lifetime or weekly reward cap during launch.
+
+Life consumption order is regular lives, referral reward lives, then purchased lives. Referral rewards are stored separately from `paidLives`, so payment refunds never remove referral rewards.
+
 ## Encrypted D1 backups
 
-Cloudflare D1 Time Travel remains the quickest recovery path. The GitHub workflow `.github/workflows/d1-backup.yml` additionally exports the full production D1 database every day, encrypts it before upload, and retains the encrypted artifact for 30 days. This includes players, invoices, payments, refunds, terms acceptances and support tickets.
+Cloudflare D1 Time Travel remains the quickest recovery path. The GitHub workflow `.github/workflows/d1-backup.yml` additionally exports the full production D1 database every day, encrypts it before upload, and retains the encrypted artifact for 30 days. This includes players, analytics, attribution, referrals, invoices, payments, refunds, terms acceptances and support tickets.
 
 Create these GitHub Actions repository secrets:
 

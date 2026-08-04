@@ -116,6 +116,13 @@
   .scoreMenuBtn{appearance:none;padding:10px 18px;border:1px solid #564249;background:#0d0d12;color:var(--gold);
                 font-size:9px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
   .scoreMenuBtn:active{background:#21131a}
+  .shareChallengeBtn{display:none;appearance:none;padding:11px 18px;border:1px solid rgba(214,167,67,.62);
+                     background:linear-gradient(180deg,#211a10,#0d0c0b);color:var(--gold);font-size:9px;font-weight:900;
+                     letter-spacing:.14em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
+  .shareChallengeBtn.show{display:block}.shareChallengeBtn:active{transform:translateY(1px);background:#2a1a10}
+  .shareChallengeBtn:disabled{opacity:.45;cursor:wait}
+  #shareStatus{display:none;max-width:360px;color:var(--bone-dim);font-size:9px;line-height:1.4}
+  #shareStatus.show{display:block}
   #scoresPanel{display:none;position:fixed;inset:0;z-index:70;align-items:center;justify-content:center;padding:18px;
                background:rgba(2,3,6,.94);touch-action:manipulation;pointer-events:auto}
   #scoresPanel.show{display:flex}
@@ -146,11 +153,14 @@
   #scoresEmpty{padding:26px 10px;text-align:center;color:var(--bone-dim);font-size:12px}
   #scoresFooter{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
   #scoresStatus{min-height:16px;color:var(--bone-dim);font-size:9px;line-height:1.4}
+  #scoresActions{display:flex;align-items:center;gap:7px}
+  #scoresShare{display:block;padding:9px 11px}
   #scoresRefresh{padding:9px 13px;border:1px solid #59434a;background:#120d11;color:var(--gold);font-size:8px;
                  font-weight:900;letter-spacing:.15em;cursor:pointer;touch-action:manipulation}
   #versionTag{position:fixed;right:10px;bottom:8px;z-index:25;font-size:10px;letter-spacing:.18em;
     color:rgba(230,223,207,.38);font-weight:700;pointer-events:none;text-transform:lowercase;text-shadow:0 1px 2px #000}
   @media(max-width:390px){#hud{padding-left:7px;padding-right:7px;gap:4px}.cnt{font-size:23px}#lvl{font-size:8px}#scoreHudBtn{min-width:42px;padding:3px}}
+  @media(max-height:700px){#overlay{justify-content:flex-start;overflow-y:auto;padding-top:24px;padding-bottom:24px}}
 </style>
 </head>
 <body>
@@ -205,6 +215,8 @@
     <label id="termsConsent"><input id="termsCheckbox" type="checkbox"><span>I have read and accept the TRAP Terms &amp; Refund Policy.</span></label>
     <div id="storeStatus"></div>
   </div>
+  <button id="shareChallenge" class="shareChallengeBtn" type="button">📤 Share challenge</button>
+  <div id="shareStatus"></div>
   <button id="scoreMenuBtn" class="scoreControl scoreMenuBtn" type="button">🏆 Scores</button>
   <button id="ovBtn" type="button"
     onclick="window.__trapStart&&window.__trapStart(event)"
@@ -222,11 +234,14 @@
     <div id="scoresList"><div id="scoresEmpty">No scores loaded.</div></div>
     <div id="scoresFooter">
       <div id="scoresStatus"></div>
-      <button id="scoresRefresh" type="button">REFRESH</button>
+      <div id="scoresActions">
+        <button id="scoresShare" class="shareChallengeBtn" type="button" disabled>📤 SHARE</button>
+        <button id="scoresRefresh" type="button">REFRESH</button>
+      </div>
     </div>
   </div>
 </div>
-<div id="versionTag">v29</div>
+<div id="versionTag">v30</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -235,7 +250,7 @@
 
 /* ================= константи ================= */
 const FW=16, FH=14, GROUND_Y=11;
-const LIFE_BALANCE_VERSION=2;
+const LIFE_BALANCE_VERSION=3;
 
 // ===== BETA TEST =====
 // true  = нескінченні життя для тестування
@@ -274,6 +289,8 @@ const cnum=document.getElementById('cnum'), creq=document.getElementById('creq')
       cbox=document.getElementById('coins');
 const ov=document.getElementById('overlay'), ovT=document.getElementById('ovTitle'),
       ovS=document.getElementById('ovSub'), ovB=document.getElementById('ovBtn');
+const shareChallengeButton=document.getElementById('shareChallenge');
+const shareStatus=document.getElementById('shareStatus');
 const betaLevelPicker=document.getElementById('betaLevelPicker');
 const betaLevelSelect=document.getElementById('betaLevelSelect');
 const resumeInfo=document.getElementById('resumeInfo');
@@ -286,6 +303,7 @@ const scoreOpenButtons=[...document.querySelectorAll('.scoreControl')];
 const scoresPanel=document.getElementById('scoresPanel');
 const scoresClose=document.getElementById('scoresClose');
 const scoresRefresh=document.getElementById('scoresRefresh');
+const scoresShare=document.getElementById('scoresShare');
 const scoresList=document.getElementById('scoresList');
 const scoresStatus=document.getElementById('scoresStatus');
 const myScore=document.getElementById('myScore');
@@ -296,6 +314,9 @@ let termsAccepted=false;
 let termsLoaded=false;
 let saveTimer=0;
 let saveInFlight=false;
+let overlayShareResult=null;
+let leaderboardShareResult=null;
+let lastStoreViewKey='';
 function setBetaPickerVisible(visible){
   if(!BETA_TEST_MODE) return;
   betaLevelPicker.classList.toggle('show',visible);
@@ -1089,7 +1110,7 @@ const LEVELS=[
 /* ================= стан ================= */
 let LI=0, L=LEVELS[0], T={};
 const state={
-  deaths:0, lives:3, paidLives:0, bonusLives:new Set(), gameOverPending:false, cp:0, coins:0, req:1, reqKnown:false, got:new Set(),
+  deaths:0, lives:3, rewardLives:0, paidLives:0, bonusLives:new Set(), gameOverPending:false, cp:0, coins:0, req:1, reqKnown:false, got:new Set(),
   hiddenOn:false, flagLock:false,
   coinFx:null, weight:null, wall:null, proj:null, bossShots:[], crumb:[],
   deathFx:[], bloodFx:[], dead:0, won:false, running:false, shake:0, flash:0, saveMsg:0, saveTxt:'', rejectMsg:0, flags:{}, revealed:new Set()
@@ -1098,10 +1119,13 @@ const p={x:1,y:GROUND_Y-PH,vx:0,vy:0,onG:false,coyote:0,buf:0,face:1,anim:0,airV
 
 function updateLives(){
   lnum.textContent=BETA_TEST_MODE&&!SHOW_TEST_LIFE_BALANCE?'∞':state.lives;
-  paidnum.textContent=(!BETA_TEST_MODE||SHOW_TEST_LIFE_BALANCE)&&state.paidLives>0?state.paidLives+' PAID':'';
-  lbox.title=BETA_TEST_MODE&&!SHOW_TEST_LIFE_BALANCE?'BETA TEST: infinite lives':state.paidLives>0
-    ? state.lives+' regular lives · '+state.paidLives+' purchased lives'
-    : 'Lives remaining';
+  const compact=count=>count>=1000000?'1M':count>=1000?((count/1000).toFixed(count>=10000?0:1).replace('.0','')+'K'):String(count);
+  const reserves=[];
+  if(state.rewardLives>0) reserves.push(compact(state.rewardLives)+' BONUS');
+  if(state.paidLives>0) reserves.push(compact(state.paidLives)+' PAID');
+  paidnum.textContent=(!BETA_TEST_MODE||SHOW_TEST_LIFE_BALANCE)?reserves.join(' · '):'';
+  lbox.title=BETA_TEST_MODE&&!SHOW_TEST_LIFE_BALANCE?'BETA TEST: infinite lives':
+    state.lives+' regular lives · '+state.rewardLives+' referral lives · '+state.paidLives+' purchased lives';
   lbox.classList.add('bump'); setTimeout(()=>lbox.classList.remove('bump'),110);
 }
 function resetRun(){
@@ -1167,7 +1191,7 @@ function loadLevel(i){
 /* ================= Telegram saves / in-game scores / Stars ================= */
 function serializeProgress(screen='playing'){
   return {
-    level:LI, checkpoint:state.cp, deaths:state.deaths, lives:state.lives, paidLives:state.paidLives,
+    level:LI, checkpoint:state.cp, deaths:state.deaths, lives:state.lives, rewardLives:state.rewardLives, paidLives:state.paidLives,
     lifeBalanceVersion:LIFE_BALANCE_VERSION,
     coins:state.coins, got:[...state.got], bonusLives:[...state.bonusLives],
     hiddenOn:state.hiddenOn, reqKnown:state.reqKnown, flags:{...state.flags},
@@ -1202,18 +1226,72 @@ async function apiRequest(path,options={}){
   if(!response.ok){ const err=new Error(data.error||('HTTP '+response.status)); err.status=response.status; err.data=data; throw err; }
   return data;
 }
+async function trackEvent(event,details={}){
+  if(BETA_TEST_MODE||!SESSION_VERIFIED||!HAS_TELEGRAM_BACKEND) return null;
+  try{
+    return await apiRequest('/api/event',{method:'POST',body:JSON.stringify({event,...details})});
+  }catch(_){ return null; }
+}
 function escapeHtml(value){
   return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+function setShareVisible(visible,context='',level=LI+1,deaths=state.deaths){
+  overlayShareResult=visible?{context,level:Number(level)||1,deaths:Number(deaths)||0}:null;
+  shareChallengeButton.classList.toggle('show',Boolean(visible));
+  shareChallengeButton.disabled=false;
+  shareStatus.textContent=''; shareStatus.classList.remove('show');
+}
+async function shareChallengeResult(result,button,statusElement){
+  if(!result||button.disabled) return;
+  if(BETA_TEST_MODE||!SESSION_VERIFIED||!HAS_TELEGRAM_BACKEND){
+    statusElement.textContent='Open the verified Telegram Mini App to share a challenge.';
+    statusElement.classList&&statusElement.classList.add('show');
+    return;
+  }
+  button.disabled=true; statusElement.textContent='Preparing challenge…';
+  statusElement.classList&&statusElement.classList.add('show');
+  let nativeShareStarted=false;
+  try{
+    const data=await apiRequest('/api/share-challenge',{
+      method:'POST',body:JSON.stringify({context:result.context,level:result.level,deaths:result.deaths})
+    });
+    const canNativeShare=TELEGRAM_WEB_APP&&typeof TELEGRAM_WEB_APP.shareMessage==='function'&&
+      (!TELEGRAM_WEB_APP.isVersionAtLeast||TELEGRAM_WEB_APP.isVersionAtLeast('8.0'));
+    if(canNativeShare){
+      nativeShareStarted=true;
+      statusElement.textContent='Choose a friend or group in Telegram…';
+      TELEGRAM_WEB_APP.shareMessage(data.messageId,sent=>{
+        statusElement.textContent=sent?'Challenge sent! Your reward unlocks when the new player clears Level 1.':'Sharing cancelled.';
+        if(sent) trackEvent('share_sent',{level:result.level,deaths:result.deaths,context:result.context});
+        button.disabled=false;
+      });
+      return;
+    }
+    const text='☠️ I reached Level '+result.level+' with '+result.deaths+' deaths in TRAP. Can you do better?';
+    const fallback='https://t.me/share/url?url='+encodeURIComponent(data.link)+'&text='+encodeURIComponent(text);
+    if(TELEGRAM_WEB_APP&&typeof TELEGRAM_WEB_APP.openTelegramLink==='function') TELEGRAM_WEB_APP.openTelegramLink(fallback);
+    else location.assign(fallback);
+    statusElement.textContent='Telegram share opened.';
+    trackEvent('share_sent',{level:result.level,deaths:result.deaths,context:'fallback_'+result.context});
+  }catch(err){
+    statusElement.textContent=err.message||'Could not prepare the challenge.';
+  }finally{
+    if(!nativeShareStarted) button.disabled=false;
+  }
 }
 function renderLeaderboard(data){
   const me=data&&data.me;
   if(me){
+    leaderboardShareResult={level:Number(me.level),deaths:Number(me.deaths)};
+    scoresShare.disabled=false;
     myScore.innerHTML='<b>YOUR BEST · #'+Number(me.rank)+'</b>'+
       '<div class="myScoreStats">'+
         '<div class="myScoreMetric"><small>LEVEL</small>'+Number(me.level)+'</div>'+
         '<div class="myScoreMetric deathMetric"><small>DEATHS</small>'+Number(me.deaths)+'</div>'+
       '</div>';
   }else{
+    leaderboardShareResult=null;
+    scoresShare.disabled=true;
     myScore.innerHTML='<b>YOUR BEST</b><br>No recorded result yet. Start a level to enter the leaderboard.';
   }
   const players=Array.isArray(data&&data.players)?data.players:[];
@@ -1254,6 +1332,7 @@ function openScores(e){
   state.running=false;
   keyboardKeys.l=keyboardKeys.r=false; padKeys.l=padKeys.r=false; syncMoveKeys();
   scoresPanel.classList.add('show'); scoresPanel.setAttribute('aria-hidden','false');
+  scoresShare.disabled=true; leaderboardShareResult=null;
   loadLeaderboard();
 }
 function closeScores(e){
@@ -1269,6 +1348,11 @@ scoreOpenButtons.forEach(button=>{
 scoresClose.addEventListener('click',closeScores);
 scoresClose.addEventListener('touchend',closeScores,{passive:false});
 scoresRefresh.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();loadLeaderboard();});
+shareChallengeButton.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();shareChallengeResult(overlayShareResult,shareChallengeButton,shareStatus);});
+scoresShare.addEventListener('click',e=>{
+  e.preventDefault();e.stopPropagation();
+  if(leaderboardShareResult) shareChallengeResult({context:'scores',...leaderboardShareResult},scoresShare,scoresStatus);
+});
 scoresPanel.addEventListener('click',e=>{if(e.target===scoresPanel)closeScores(e);else e.stopPropagation();});
 scoresPanel.addEventListener('touchstart',e=>e.stopPropagation(),{passive:false});
 addEventListener('keydown',e=>{if(e.key==='Escape'&&scoresPanel.classList.contains('show'))closeScores(e);});
@@ -1306,6 +1390,7 @@ function applyProgress(progress){
   state.cp=Math.max(0,Math.min(L.checks.length-1,Number(progress.checkpoint)||0));
   state.deaths=Math.max(0,Number(progress.deaths)||0);
   state.lives=Math.max(0,Number(progress.lives)||0);
+  state.rewardLives=Math.max(0,Number(progress.rewardLives)||0);
   state.paidLives=Math.max(0,Number(progress.paidLives)||0);
   state.coins=Math.max(0,Number(progress.coins)||0);
   state.req=L.req; state.reqKnown=Boolean(progress.reqKnown);
@@ -1319,17 +1404,22 @@ function applyProgress(progress){
   return true;
 }
 function lifeTotal(source){
-  return Math.max(0,Number(source&&source.lives)||0)+Math.max(0,Number(source&&source.paidLives)||0);
+  return Math.max(0,Number(source&&source.lives)||0)+Math.max(0,Number(source&&source.rewardLives)||0)+Math.max(0,Number(source&&source.paidLives)||0);
 }
 function showResume(progress){
   if(BETA_TEST_MODE||!progress) return;
   if(progress.completed){
+    state.rewardLives=Math.max(0,Number(progress.rewardLives)||0);
     state.paidLives=Math.max(0,Number(progress.paidLives)||0);
     state.lives=3; updateLives();
-    if(state.paidLives>0){
-      resumeInfo.innerHTML='<b style="color:var(--gold)">PURCHASED RESERVE</b><br>'+state.paidLives+' paid '+(state.paidLives===1?'life':'lives')+' saved · new run starts with 3 free lives';
+    if(state.rewardLives>0||state.paidLives>0){
+      const reserves=[];
+      if(state.rewardLives>0) reserves.push(state.rewardLives+' referral '+(state.rewardLives===1?'life':'lives'));
+      if(state.paidLives>0) reserves.push(state.paidLives+' paid '+(state.paidLives===1?'life':'lives'));
+      resumeInfo.innerHTML='<b style="color:var(--gold)">SAVED RESERVES</b><br>'+reserves.join(' · ')+' · new run starts with 3 free lives';
       resumeInfo.classList.add('show');
     }
+    setShareVisible(true,'game_complete');
     return;
   }
   if(lifeTotal(progress)<=0){
@@ -1342,7 +1432,9 @@ function showResume(progress){
   const level=Math.max(0,Math.min(9,Number(progress.level)||0))+1;
   const cp=Math.max(0,Number(progress.checkpoint)||0)+1;
   const paid=Math.max(0,Number(progress.paidLives)||0);
+  const reward=Math.max(0,Number(progress.rewardLives)||0);
   resumeInfo.innerHTML='<b style="color:var(--gold)">SAVED GAME</b><br>Level '+level+' · checkpoint '+cp+' · '+(Number(progress.deaths)||0)+' deaths · '+(Number(progress.lives)||0)+' lives'+(paid?' · '+paid+' paid':'');
+  if(reward) resumeInfo.innerHTML+=' · '+reward+' bonus';
   resumeInfo.classList.add('show');
   ovB.textContent='Continue Level '+level; ovB.dataset.act='resume';
 }
@@ -1371,14 +1463,19 @@ async function initializeSave(){
 function showTelegramGate(){
   state.running=false; STATE_READY_FOR_WRITES=false; resumeProgress=null; resumeInfo.classList.remove('show');
   setLifeStoreVisible(false); setBetaPickerVisible(false); ov.classList.remove('hidden');
+  setShareVisible(false);
   ovT.textContent='TELEGRAM ONLY';
   ovS.innerHTML='Open TRAP from <b style="color:var(--gold)">@trap_game_bot</b> to verify your session.';
   ovB.textContent='Open in Telegram'; ovB.dataset.act='telegram'; ovB.disabled=false;
 }
 function setLifeStoreVisible(visible){
-  const show=Boolean(visible&&!BETA_TEST_MODE&&state.lives<=0&&state.paidLives<=0);
+  const show=Boolean(visible&&!BETA_TEST_MODE&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0);
   lifeStore.classList.toggle('show',show); lifeStore.setAttribute('aria-hidden',show?'false':'true');
-  if(show) loadTerms();
+  if(show){
+    loadTerms();
+    const key=LI+':'+state.deaths;
+    if(lastStoreViewKey!==key){ lastStoreViewKey=key; trackEvent('store_view',{level:LI+1,deaths:state.deaths}); }
+  }
 }
 async function loadTerms(){
   if(termsLoaded||!HAS_TELEGRAM_BACKEND) return;
@@ -1417,7 +1514,7 @@ function resumeAfterPayment(progress){
 }
 async function buyLifePack(stars){
   if(!HAS_TELEGRAM_BACKEND){ storeStatus.textContent='Open the game from the Telegram bot to buy lives.'; return; }
-  if(state.lives>0||state.paidLives>0){ storeStatus.textContent='Life packs unlock only when no lives or paid reserve remain.'; return; }
+  if(state.lives>0||state.rewardLives>0||state.paidLives>0){ storeStatus.textContent='Life packs unlock only when no regular, referral or paid lives remain.'; return; }
   try{ await ensureTermsAccepted(); }
   catch(err){ storeStatus.textContent=err.message||'Accept the terms before purchasing.'; return; }
   lifePackButtons.forEach(b=>b.disabled=true); storeStatus.textContent='Creating Telegram Stars invoice…';
@@ -1694,9 +1791,10 @@ function die(){
   state.dead=0.88; state.deaths++;
   if(!BETA_TEST_MODE){
     if(state.lives>0) state.lives--;
+    else if(state.rewardLives>0) state.rewardLives--;
     else if(state.paidLives>0) state.paidLives--;
   }
-  state.gameOverPending=!BETA_TEST_MODE&&state.lives<=0&&state.paidLives<=0;
+  state.gameOverPending=!BETA_TEST_MODE&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0;
   state.shake=0.72; state.flash=0.46;
   dnum.textContent=state.deaths; updateLives();
   queueSave(state.gameOverPending?'game_over':'playing',true);
@@ -1722,6 +1820,7 @@ function showGameOverOverlay(){
   ovT.textContent='NO LIVES LEFT';
   ovS.innerHTML='You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>Your checkpoint is saved. Buy lives with Telegram Stars or begin again from Level 1.';
   ovB.textContent='Begin Again'; ovB.dataset.act='restart';
+  setShareVisible(true,'game_over',LI+1,state.deaths);
   setLifeStoreVisible(true);
   setBetaPickerVisible(true); ov.classList.remove('hidden');
 }
@@ -1732,6 +1831,8 @@ function gameOver(){
 function win(){
   state.won=true; state.running=false;
   const last=LI>=LEVELS.length-1;
+  const completedLevel=LI+1;
+  const completedDeaths=state.deaths;
   let bonus='';
   if(!state.bonusLives.has(LI)){
     state.bonusLives.add(LI);
@@ -1745,15 +1846,21 @@ function win(){
   ovT.textContent=last?'THE NIGHTMARE ENDS':(L.name.toUpperCase()+' CLEARED');
   ovS.innerHTML=(state.req>0?('Coins: <b style="color:var(--gold)">'+state.coins+' / '+state.req+'</b><br>'):'')+
     'Lives: <b style="color:var(--blood-bright)">'+(BETA_TEST_MODE?'∞ · BETA':state.lives)+'</b>'+
+    (!BETA_TEST_MODE&&state.rewardLives?'<br>Referral reserve: <b style="color:var(--gold)">'+state.rewardLives+'</b>':'')+
     (!BETA_TEST_MODE&&state.paidLives?'<br>Paid reserve: <b style="color:var(--gold)">'+state.paidLives+'</b>':'')+
     '<br>Total deaths: <b style="color:var(--blood)">'+state.deaths+'</b>'+bonus+
     (last?'<br><br>You survived all ten rooms.':'<br><br>The next room is worse.');
   ovB.textContent=last?'Restart':'Next';
   ovB.dataset.act=last?'restart':'next';
+  setShareVisible(true,last?'game_complete':'level_complete',completedLevel,completedDeaths);
   setLifeStoreVisible(false);
   const saved=serializeProgress(last?'game_complete':'level_complete');
   if(!last){ saved.level=LI+1; saved.checkpoint=0; saved.coins=0; saved.got=[]; saved.hiddenOn=false; saved.reqKnown=false; saved.flags={}; }
-  persistSnapshot(saved,true); submitScore(LI+1);
+  Promise.resolve(persistSnapshot(saved,true)).finally(()=>{
+    trackEvent('level_complete',{level:completedLevel,deaths:completedDeaths,context:last?'game_complete':'level_complete'});
+    if(last) trackEvent('game_complete',{level:completedLevel,deaths:completedDeaths,context:'game_complete'});
+  });
+  submitScore(completedLevel);
   setBetaPickerVisible(last);
   ov.classList.remove('hidden');
 }
@@ -2110,6 +2217,9 @@ function go(){
     const selectedLevel=BETA_TEST_MODE?Math.max(0,Math.min(LEVELS.length-1,Number(betaLevelSelect.value)||0)):0;
     loadLevel(selectedLevel); STATE_READY_FOR_WRITES=true; queueSave('level_start',true); submitScore(selectedLevel+1);
   }
+  if(act==='resume') trackEvent('game_resume',{level:LI+1,deaths:state.deaths});
+  else if(act!=='next') trackEvent('game_start',{level:LI+1,deaths:state.deaths});
+  setShareVisible(false);
   setLifeStoreVisible(false); setBetaPickerVisible(false);
   ovB.dataset.act='restart';
   ov.classList.add('hidden');
@@ -2118,7 +2228,7 @@ function go(){
 let overlayActivationAt=-1000;
 function activateOverlay(e){
   if(ov.classList.contains('hidden')||state.running||ovB.disabled) return;
-  if(e&&e.target&&e.target.closest&&(e.target.closest('#betaLevelPicker')||e.target.closest('#lifeStore')||e.target.closest('.scoreControl')||e.target.closest('#scoresPanel'))) return;
+  if(e&&e.target&&e.target.closest&&(e.target.closest('#betaLevelPicker')||e.target.closest('#lifeStore')||e.target.closest('.scoreControl')||e.target.closest('.shareChallengeBtn')||e.target.closest('#scoresPanel'))) return;
   const now=performance.now();
   if(now-overlayActivationAt<180) return;
   overlayActivationAt=now;
@@ -2148,18 +2258,23 @@ if(BETA_TEST_MODE&&URL_PARAMS.has('testLives')){
   updateLives();
 }
 render(); initializeSave();
+if(BETA_TEST_MODE&&URL_PARAMS.get('testOverlay')==='game_over'){
+  state.deaths=Math.max(1,Number(URL_PARAMS.get('testDeaths'))||42);
+  dnum.textContent=state.deaths;
+  showGameOverOverlay();
+}
 if(BETA_TEST_MODE){
   window.__TRAP_TEST__={
     load(i){ ov.classList.add('hidden'); state.running=true; loadLevel(Math.max(0,Math.min(LEVELS.length-1,i))); },
     snapshot(){ return {level:LI,x:p.x,y:p.y,vx:p.vx,vy:p.vy,onG:p.onG,dead:state.dead,running:state.running,overlayHidden:ov.classList.contains('hidden'),grid: grid.map(r=>r.slice())}; },
     setPlayer(x,y=GROUND_Y-PH){ p.x=x;p.y=y;p.vx=0;p.vy=0;p.airVx=0;p.onG=true;p.face=1;p.buf=0; },
     gotoCheckpoint(i){ state.cp=Math.max(0,Math.min(L.checks.length-1,i)); resetLife(); },
-    setLives(lives,paidLives=0){ state.lives=Math.max(0,Number(lives)||0); state.paidLives=Math.max(0,Number(paidLives)||0); updateLives(); },
+    setLives(lives,paidLives=0,rewardLives=0){ state.lives=Math.max(0,Number(lives)||0); state.rewardLives=Math.max(0,Number(rewardLives)||0); state.paidLives=Math.max(0,Number(paidLives)||0); updateLives(); },
     holdRight(on=true){ keys.r=!!on; if(on) keys.l=false; },
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v29-support-refunds-terms'
+    buildId:'v30-growth-referrals-share'
   };
 }
 })();

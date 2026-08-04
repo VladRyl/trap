@@ -3,15 +3,16 @@ import gameHtml from "./trap.html";
 const SESSION_TTL = 60 * 60 * 24 * 30;
 const MINI_APP_AUTH_MAX_AGE = 60 * 60 * 24;
 const LIFE_PACKS = { 10: 1, 50: 7, 100: 15 };
-const LIFE_BALANCE_VERSION = 2;
-const TERMS_VERSION = 1;
-const TERMS_TEXT = `TRAP TERMS & REFUND POLICY (version 1)
+const LIFE_BALANCE_VERSION = 3;
+const REWARD_LIVES_MAX = 1_000_000;
+const TERMS_VERSION = 2;
+const TERMS_TEXT = `TRAP TERMS & REFUND POLICY (version 2)
 
 1. TRAP is a digital game. Life packs are digital goods sold only for Telegram Stars.
 2. Purchased lives are credited after Telegram confirms a successful payment. Unused purchased lives remain attached to your Telegram account.
 3. Launch-period refund policy: you may request a full refund through /paysupport. Refunds are processed by the bot operator. Telegram is not responsible for support or refunds.
 4. When a purchase is refunded, any unused lives from that purchase may be removed from your paid-life reserve. A refund can also be granted after lives were used, at the operator's discretion.
-5. Game progress, support messages, payment identifiers and refund records are stored against your Telegram user ID to operate the game, prevent duplicate delivery and provide support.
+5. Game progress, gameplay events, acquisition source, referral relationships, support messages, payment identifiers and refund records are stored against your Telegram user ID to operate and improve the game, attribute invitations, prevent duplicate rewards and provide support.
 6. The service is provided as-is. Availability and game balance may change.
 
 By purchasing a life pack, you confirm that you accept these terms. For general help use /support. For payment or refund help use /paysupport.`;
@@ -95,6 +96,47 @@ const SCHEMA = [
     error TEXT,
     FOREIGN KEY(telegram_charge_id) REFERENCES payments(telegram_charge_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS analytics_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    event_name TEXT NOT NULL,
+    event_key TEXT UNIQUE,
+    level INTEGER,
+    value INTEGER NOT NULL DEFAULT 1,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES players(user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_analytics_events_name_time ON analytics_events(event_name, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_analytics_events_user_time ON analytics_events(user_id, created_at)`,
+  `CREATE TABLE IF NOT EXISTS player_acquisition (
+    user_id INTEGER PRIMARY KEY,
+    source TEXT NOT NULL,
+    start_param TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES players(user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_player_acquisition_source ON player_acquisition(source, created_at)`,
+  `CREATE TABLE IF NOT EXISTS referral_codes (
+    code TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES players(user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS referrals (
+    referred_user_id INTEGER PRIMARY KEY,
+    referrer_user_id INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    qualified_at INTEGER,
+    reward_granted_at INTEGER,
+    reward_token TEXT UNIQUE,
+    FOREIGN KEY(referred_user_id) REFERENCES players(user_id),
+    FOREIGN KEY(referrer_user_id) REFERENCES players(user_id),
+    FOREIGN KEY(code) REFERENCES referral_codes(code),
+    CHECK(referred_user_id <> referrer_user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_user_id, qualified_at)`,
 ];
 
 function now() {
@@ -137,7 +179,8 @@ async function validateMiniAppInitData(env, raw) {
   try {
     const user = JSON.parse(params.get("user") || "null");
     if (!user || user.is_bot || !Number.isSafeInteger(Number(user.id)) || Number(user.id) < 1) return null;
-    return { user, authDate };
+    const startParam = String(params.get("start_param") || "").trim().slice(0, 64);
+    return { user, authDate, startParam };
   } catch {
     return null;
   }
@@ -154,6 +197,7 @@ function defaultProgress() {
     checkpoint: 0,
     deaths: 0,
     lives: 3,
+    rewardLives: 0,
     paidLives: 0,
     lifeBalanceVersion: LIFE_BALANCE_VERSION,
     coins: 0,
@@ -174,9 +218,11 @@ function sanitizeProgress(raw) {
   progress.checkpoint = clampInt(raw.checkpoint, 0, 30);
   progress.deaths = clampInt(raw.deaths, 0, 10_000_000);
   const rawLives = clampInt(raw.lives, 0, 999);
+  const rawRewardLives = clampInt(raw.rewardLives, 0, REWARD_LIVES_MAX);
   const rawPaidLives = clampInt(raw.paidLives, 0, 999);
-  const separateBalances = clampInt(raw.lifeBalanceVersion, 0, LIFE_BALANCE_VERSION) >= LIFE_BALANCE_VERSION;
+  const separateBalances = clampInt(raw.lifeBalanceVersion, 0, LIFE_BALANCE_VERSION) >= 2;
   progress.lives = separateBalances || rawPaidLives > rawLives ? rawLives : Math.max(0, rawLives - rawPaidLives);
+  progress.rewardLives = rawRewardLives;
   progress.paidLives = rawPaidLives;
   progress.lifeBalanceVersion = LIFE_BALANCE_VERSION;
   progress.coins = clampInt(raw.coins, 0, 100);
@@ -326,6 +372,235 @@ function displayName(row) {
   return (firstName || (username ? `@${username}` : "Player")).slice(0, 40);
 }
 
+function safeMetadata(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "{}";
+  const metadata = Object.fromEntries(Object.entries(value).slice(0, 12).map(([key, item]) => [
+    String(key).slice(0, 40),
+    typeof item === "boolean" || typeof item === "number" ? item : String(item ?? "").slice(0, 120),
+  ]));
+  return JSON.stringify(metadata).slice(0, 1500);
+}
+
+async function recordAnalyticsEvent(env, userId, eventName, details = {}) {
+  const key = details.eventKey ? String(details.eventKey).slice(0, 180) : null;
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO analytics_events(user_id, event_name, event_key, level, value, metadata_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    userId,
+    String(eventName).slice(0, 50),
+    key,
+    details.level == null ? null : clampInt(details.level, 0, 10),
+    clampInt(details.value, 1, 1_000_000, 1),
+    safeMetadata(details.metadata),
+    now(),
+  ).run();
+}
+
+async function getOrCreateReferralCode(env, userId) {
+  const existing = await env.DB.prepare("SELECT code FROM referral_codes WHERE user_id=?").bind(userId).first();
+  if (existing?.code) return String(existing.code);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const code = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
+    await env.DB.prepare("INSERT OR IGNORE INTO referral_codes(code, user_id, created_at) VALUES (?, ?, ?)")
+      .bind(code, userId, now()).run();
+    const row = await env.DB.prepare("SELECT code FROM referral_codes WHERE user_id=?").bind(userId).first();
+    if (row?.code) return String(row.code);
+  }
+  throw new Error("Could not create a referral code.");
+}
+
+async function registerAcquisition(env, userId, startParam, isNewPlayer) {
+  if (!isNewPlayer) return;
+  const cleanParam = /^[A-Za-z0-9_-]{1,64}$/.test(String(startParam || "")) ? String(startParam) : "";
+  const referralMatch = /^r_([a-f0-9]{12})$/i.exec(cleanParam);
+  const source = referralMatch ? "referral" : (cleanParam || "direct");
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO player_acquisition(user_id, source, start_param, created_at) VALUES (?, ?, ?, ?)",
+  ).bind(userId, source, cleanParam, now()).run();
+  if (!referralMatch) return;
+  const code = referralMatch[1].toLowerCase();
+  const referrer = await env.DB.prepare("SELECT user_id FROM referral_codes WHERE code=?").bind(code).first();
+  if (!referrer || Number(referrer.user_id) === userId) return;
+  const result = await env.DB.prepare(
+    `INSERT OR IGNORE INTO referrals(referred_user_id, referrer_user_id, code, created_at)
+     VALUES (?, ?, ?, ?)`,
+  ).bind(userId, Number(referrer.user_id), code, now()).run();
+  if (Number(result.meta.changes) === 1) {
+    await recordAnalyticsEvent(env, userId, "referral_open", {
+      eventKey: `referral_open:${userId}`,
+      metadata: { referrer_user_id: Number(referrer.user_id), code },
+    });
+  }
+}
+
+async function qualifyReferral(env, referredUserId) {
+  const referral = await env.DB.prepare(
+    "SELECT * FROM referrals WHERE referred_user_id=? AND qualified_at IS NULL LIMIT 1",
+  ).bind(referredUserId).first();
+  if (!referral) return null;
+  const rewardToken = crypto.randomUUID();
+  const timestamp = now();
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE referrals SET qualified_at=?, reward_granted_at=?, reward_token=?
+       WHERE referred_user_id=? AND qualified_at IS NULL`,
+    ).bind(timestamp, timestamp, rewardToken, referredUserId),
+    env.DB.prepare(
+      `UPDATE players SET
+       progress_json=json_set(progress_json,
+         '$.rewardLives', MIN(?, COALESCE(CAST(json_extract(progress_json, '$.rewardLives') AS INTEGER), 0) + 1),
+         '$.lifeBalanceVersion', ?),
+       payment_version=payment_version+1, updated_at=?
+       WHERE user_id=? AND EXISTS (
+         SELECT 1 FROM referrals WHERE referred_user_id=? AND reward_token=?
+       )`,
+    ).bind(REWARD_LIVES_MAX, LIFE_BALANCE_VERSION, timestamp, referral.referrer_user_id, referredUserId, rewardToken),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO analytics_events(user_id, event_name, event_key, level, value, metadata_json, created_at)
+       SELECT ?, 'referral_qualified', ?, 1, 1, ?, ?
+       WHERE EXISTS (SELECT 1 FROM referrals WHERE referred_user_id=? AND reward_token=?)`,
+    ).bind(
+      referredUserId,
+      `referral_qualified:${referredUserId}`,
+      safeMetadata({ referrer_user_id: Number(referral.referrer_user_id), code: referral.code }),
+      timestamp,
+      referredUserId,
+      rewardToken,
+    ),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO analytics_events(user_id, event_name, event_key, level, value, metadata_json, created_at)
+       SELECT ?, 'reward_granted', ?, NULL, 1, ?, ?
+       WHERE EXISTS (SELECT 1 FROM referrals WHERE referred_user_id=? AND reward_token=?)`,
+    ).bind(
+      referral.referrer_user_id,
+      `reward_granted:${referredUserId}`,
+      safeMetadata({ referred_user_id: referredUserId, code: referral.code }),
+      timestamp,
+      referredUserId,
+      rewardToken,
+    ),
+  ]);
+  if (Number(results[0]?.meta?.changes) !== 1 || Number(results[1]?.meta?.changes) !== 1) return null;
+  await sendPlayButton(
+    env,
+    Number(referral.referrer_user_id),
+    env.PUBLIC_BASE_URL || "https://trap-game.trap-games.workers.dev",
+    "🎁 Your friend cleared Level 1. You received +1 referral life!",
+  ).catch((error) => console.error(error));
+  return { referrerUserId: Number(referral.referrer_user_id), rewardLives: 1 };
+}
+
+async function createPreparedChallenge(env, userId, body) {
+  const player = await getPlayer(env, userId);
+  if (!player) throw new Error("Player was not found.");
+  const code = await getOrCreateReferralCode(env, userId);
+  const fallbackLevel = player.best_level > 0 ? player.best_level : player.progress.level + 1;
+  const fallbackDeaths = player.best_level > 0 ? player.best_deaths : player.progress.deaths;
+  const level = clampInt(body.level ?? fallbackLevel, 1, 10, 1);
+  const deaths = clampInt(body.deaths ?? fallbackDeaths, 0, 10_000_000);
+  const context = ["game_over", "level_complete", "game_complete", "scores"].includes(body.context)
+    ? body.context
+    : "scores";
+  const link = `https://t.me/trap_game_bot/play?startapp=r_${code}`;
+  const name = displayName(player);
+  const messageText = context === "game_complete"
+    ? `🏆 ${name} survived all 10 rooms of TRAP with ${deaths} deaths.\nCan you beat this run?`
+    : `☠️ ${name} reached Level ${level} in TRAP with ${deaths} deaths.\nCan you do better?`;
+  const prepared = await telegram(env, "savePreparedInlineMessage", {
+    user_id: userId,
+    result: {
+      type: "article",
+      id: crypto.randomUUID(),
+      title: "Challenge a friend in TRAP",
+      description: `Level ${level} · ${deaths} deaths`,
+      input_message_content: { message_text: messageText },
+      reply_markup: {
+        inline_keyboard: [[{ text: "🎮 BEAT MY SCORE", url: link }]],
+      },
+    },
+    allow_user_chats: true,
+    allow_group_chats: true,
+    allow_channel_chats: true,
+  });
+  await recordAnalyticsEvent(env, userId, "share_created", {
+    level,
+    metadata: { context, deaths, code },
+  });
+  return { messageId: prepared.id, expiresAt: prepared.expiration_date, link, level, deaths };
+}
+
+function percentage(numerator, denominator) {
+  return denominator > 0 ? `${Math.round((numerator / denominator) * 100)}%` : "—";
+}
+
+async function adminStatsMessage(env) {
+  const since = now() - 7 * 24 * 60 * 60;
+  const [players, events, payments, refunds, referrals, topReferrers] = await env.DB.batch([
+    env.DB.prepare("SELECT COUNT(*) AS total FROM players"),
+    env.DB.prepare(
+      `SELECT event_name, COUNT(*) AS events, COUNT(DISTINCT user_id) AS users, SUM(value) AS value_total,
+       SUM(CASE WHEN created_at>=? THEN 1 ELSE 0 END) AS events_7d,
+       COUNT(DISTINCT CASE WHEN created_at>=? THEN user_id END) AS users_7d
+       FROM analytics_events GROUP BY event_name`,
+    ).bind(since, since),
+    env.DB.prepare("SELECT COUNT(*) AS count, COUNT(DISTINCT user_id) AS users, COALESCE(SUM(stars), 0) AS stars FROM payments"),
+    env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(stars), 0) AS stars FROM refunds WHERE status='completed'"),
+    env.DB.prepare(
+      `SELECT COUNT(*) AS opened,
+       SUM(CASE WHEN qualified_at IS NOT NULL THEN 1 ELSE 0 END) AS qualified,
+       SUM(CASE WHEN reward_granted_at IS NOT NULL THEN 1 ELSE 0 END) AS rewarded
+       FROM referrals`,
+    ),
+    env.DB.prepare(
+      `SELECT p.first_name, p.username, r.referrer_user_id, COUNT(*) AS qualified,
+       SUM(CASE WHEN r.qualified_at>=? THEN 1 ELSE 0 END) AS qualified_24h
+       FROM referrals r JOIN players p ON p.user_id=r.referrer_user_id
+       WHERE r.qualified_at IS NOT NULL
+       GROUP BY r.referrer_user_id ORDER BY qualified DESC, r.referrer_user_id LIMIT 5`,
+    ).bind(now() - 24 * 60 * 60),
+  ]);
+  const eventMap = Object.fromEntries((events.results || []).map((row) => [row.event_name, row]));
+  const metric = (name) => ({
+    all: Number(eventMap[name]?.users || 0),
+    seven: Number(eventMap[name]?.users_7d || 0),
+    events: Number(eventMap[name]?.events || 0),
+    value: Number(eventMap[name]?.value_total || 0),
+  });
+  const opens = metric("mini_app_open");
+  const starts = metric("game_start");
+  const levelOne = metric("level_complete_1");
+  const completions = metric("game_complete");
+  const shares = metric("share_sent");
+  const deaths = metric("death");
+  const stores = metric("store_view");
+  const invoices = metric("invoice_created");
+  const paymentRow = payments.results?.[0] || {};
+  const refundRow = refunds.results?.[0] || {};
+  const referralRow = referrals.results?.[0] || {};
+  const top = (topReferrers.results || []).map((row, index) =>
+    `${index + 1}. ${displayName(row)} — ${Number(row.qualified)} qualified (+${Number(row.qualified_24h || 0)} in 24h)`,
+  ).join("\n") || "No qualified referrals yet.";
+  return `📊 TRAP STATS\n\n` +
+    `Players total: ${Number(players.results?.[0]?.total || 0)}\n` +
+    `Tracked Mini App users: ${opens.all} (${opens.seven} in 7d)\n` +
+    `Started a run: ${starts.all} · ${percentage(starts.all, opens.all)} of opens\n` +
+    `Cleared Level 1: ${levelOne.all} · ${percentage(levelOne.all, starts.all)} of starters\n` +
+    `Completed game: ${completions.all}\n` +
+    `Deaths tracked: ${deaths.value}\n` +
+    `Reached store: ${stores.all} players\n` +
+    `Created invoice: ${invoices.all} players · ${percentage(invoices.all, stores.all)} of store users\n` +
+    `Shared challenge: ${shares.all} users · ${shares.events} sends\n\n` +
+    `Referral opens: ${Number(referralRow.opened || 0)}\n` +
+    `Qualified referrals: ${Number(referralRow.qualified || 0)}\n` +
+    `Rewards granted: ${Number(referralRow.rewarded || 0)}\n\n` +
+    `Payments: ${Number(paymentRow.count || 0)} from ${Number(paymentRow.users || 0)} players · ${Number(paymentRow.stars || 0)} Stars\n` +
+    `Refunds: ${Number(refundRow.count || 0)} · ${Number(refundRow.stars || 0)} Stars\n` +
+    `Net Stars: ${Number(paymentRow.stars || 0) - Number(refundRow.stars || 0)}\n\n` +
+    `TOP REFERRERS\n${top}\n\n` +
+    `Analytics started with this release; earlier gameplay was not reconstructed.`;
+}
+
 async function leaderboardForUser(env, userId) {
   const { results } = await env.DB.prepare(
     `SELECT user_id, first_name, username, best_level, best_deaths, updated_at
@@ -423,6 +698,11 @@ async function applySuccessfulPayment(env, message) {
     env.DB.prepare("UPDATE players SET progress_json=?, payment_version=payment_version+1, updated_at=? WHERE user_id=?")
       .bind(JSON.stringify(progress), now(), invoice.user_id),
   ]);
+  await recordAnalyticsEvent(env, Number(invoice.user_id), "payment_success", {
+    eventKey: `payment_success:${chargeId}`,
+    value: Number(invoice.stars),
+    metadata: { stars: Number(invoice.stars), lives: Number(invoice.lives) },
+  });
   await telegram(env, "sendMessage", {
     chat_id: message.chat.id,
     text: `❤️ Payment received: +${invoice.lives} lives. Open the game to continue from your checkpoint.`,
@@ -1015,7 +1295,12 @@ async function handleTelegramUpdate(env, update, origin) {
   const text = String(message.text || "").trim();
   const lowerText = text.toLowerCase();
   const command = commandName(message);
-  if (command === "/terms" || lowerText.startsWith("/start terms")) {
+  if (command === "/stats") {
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: Number(userId) === configuredId(env.ADMIN_USER_ID) ? await adminStatsMessage(env) : "This command is available only to the administrator.",
+    });
+  } else if (command === "/terms" || lowerText.startsWith("/start terms")) {
     await telegram(env, "sendMessage", { chat_id: chatId, text: TERMS_TEXT });
   } else if (command === "/support" || command === "/paysupport") {
     await startSupportTicket(env, message, command === "/paysupport" ? "payment" : "support");
@@ -1051,8 +1336,14 @@ async function handleApi(request, env, url) {
   if (url.pathname === "/api/session/mini-app" && request.method === "POST") {
     const validated = await validateMiniAppInitData(env, body.init_data);
     if (!validated) return json({ ok: false, error: "invalid Telegram Mini App data" }, 401);
+    const userId = Number(validated.user.id);
+    const existed = await env.DB.prepare("SELECT 1 AS found FROM players WHERE user_id=?").bind(userId).first();
     const token = await createSessionForUser(env, validated.user, { chatId: Number(validated.user.id) });
-    return json({ ok: true, token, expires_in: SESSION_TTL, user_id: Number(validated.user.id) });
+    await registerAcquisition(env, userId, validated.startParam, !existed);
+    await recordAnalyticsEvent(env, userId, "mini_app_open", {
+      metadata: { start_param: validated.startParam || "", new_player: !existed },
+    });
+    return json({ ok: true, token, expires_in: SESSION_TTL, user_id: userId });
   }
   const session = await getSession(env, requestToken(request, url, body));
   if (!session) return json({ ok: false, error: "invalid session" }, 401);
@@ -1065,12 +1356,24 @@ async function handleApi(request, env, url) {
     const current = await getPlayer(env, userId);
     const progress = sanitizeProgress(body.progress);
     const submittedPaidLives = Object.prototype.hasOwnProperty.call(body.progress || {}, "paidLives");
+    const submittedRewardLives = Object.prototype.hasOwnProperty.call(body.progress || {}, "rewardLives");
     progress.paidLives = submittedPaidLives
       ? Math.min(progress.paidLives, current.progress.paidLives)
       : current.progress.paidLives;
+    progress.rewardLives = submittedRewardLives
+      ? Math.min(progress.rewardLives, current.progress.rewardLives)
+      : current.progress.rewardLives;
+    const deathDelta = Math.max(0, progress.deaths - current.progress.deaths);
     const result = await env.DB.prepare(
       "UPDATE players SET progress_json=?, updated_at=? WHERE user_id=? AND payment_version=?",
     ).bind(JSON.stringify(progress), now(), userId, clampInt(body.payment_version, 0, 1_000_000)).run();
+    if (Number(result.meta.changes) === 1 && deathDelta > 0) {
+      await recordAnalyticsEvent(env, userId, "death", {
+        level: progress.level + 1,
+        value: deathDelta,
+        metadata: { deaths: progress.deaths, screen: progress.screen },
+      });
+    }
     const player = await getPlayer(env, userId);
     return Number(result.meta.changes) === 1
       ? json({ ok: true, ...player })
@@ -1096,7 +1399,31 @@ async function handleApi(request, env, url) {
   }
   if (url.pathname === "/api/terms/accept" && request.method === "POST") {
     await acceptTerms(env, userId);
+    await recordAnalyticsEvent(env, userId, "terms_accepted", { eventKey: `terms:${TERMS_VERSION}:${userId}` });
     return json({ ok: true, version: TERMS_VERSION, accepted: true });
+  }
+  if (url.pathname === "/api/event" && request.method === "POST") {
+    const eventName = String(body.event || "");
+    const allowedEvents = new Set(["game_start", "game_resume", "level_complete", "game_complete", "store_view", "share_sent"]);
+    if (!allowedEvents.has(eventName)) return json({ ok: false, error: "invalid event" }, 400);
+    const level = clampInt(body.level, 0, 10);
+    const storedName = eventName === "level_complete" ? `level_complete_${clampInt(level, 1, 10, 1)}` : eventName;
+    await recordAnalyticsEvent(env, userId, storedName, {
+      level,
+      metadata: { deaths: clampInt(body.deaths, 0, 10_000_000), context: String(body.context || "").slice(0, 40) },
+    });
+    let reward = null;
+    if (eventName === "level_complete" && level === 1) {
+      reward = await qualifyReferral(env, userId);
+    }
+    return json({ ok: true, reward });
+  }
+  if (url.pathname === "/api/share-challenge" && request.method === "POST") {
+    try {
+      return json({ ok: true, ...(await createPreparedChallenge(env, userId, body)) });
+    } catch (error) {
+      return json({ ok: false, error: String(error.message || error).slice(0, 300) }, 502);
+    }
   }
   if (url.pathname === "/api/invoice" && request.method === "POST") {
     const stars = clampInt(body.stars, 0, 1000);
@@ -1105,16 +1432,21 @@ async function handleApi(request, env, url) {
       return json({ ok: false, error: "accept the TRAP terms before purchasing", code: "terms_not_accepted" }, 403);
     }
     const player = await getPlayer(env, userId);
-    if (player.progress.lives > 0 || player.progress.paidLives > 0) {
-      return json({ ok: false, error: "life packs are only available when no lives or paid reserve remain" }, 409);
+    if (player.progress.lives > 0 || player.progress.rewardLives > 0 || player.progress.paidLives > 0) {
+      return json({ ok: false, error: "life packs are only available when no regular, referral or paid lives remain" }, 409);
     }
     const requestedDelivery = body.delivery === "chat" ? "chat" : "link";
     const invoice = await createInvoice(env, userId, stars, session.chat_id, requestedDelivery);
+    await recordAnalyticsEvent(env, userId, "invoice_created", {
+      value: stars,
+      metadata: { stars, lives: LIFE_PACKS[stars], delivery: requestedDelivery },
+    });
     return json({ ok: true, ...invoice, stars, lives: LIFE_PACKS[stars] });
   }
   if (url.pathname === "/api/reset" && request.method === "POST") {
     const player = await getPlayer(env, userId);
     const fresh = defaultProgress();
+    fresh.rewardLives = player.progress.rewardLives;
     fresh.paidLives = player.progress.paidLives;
     const result = await env.DB.prepare("UPDATE players SET progress_json=?, updated_at=? WHERE user_id=? AND payment_version=?")
       .bind(JSON.stringify(fresh), now(), userId, player.payment_version).run();
@@ -1143,7 +1475,8 @@ export default {
         return json({ ok: true, service: "trap-game", storage: "d1", telegram_webhook: Boolean(env.BOT_TOKEN && env.WEBHOOK_SECRET) });
       }
       if ((url.pathname === "/" || url.pathname === "/game") && ["GET", "HEAD"].includes(request.method)) {
-        if (url.searchParams.has("beta")) {
+        const localHost = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+        if (url.searchParams.has("beta") && !localHost) {
           url.searchParams.delete("beta");
           return Response.redirect(url.toString(), 302);
         }
