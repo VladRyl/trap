@@ -1,6 +1,7 @@
 import gameHtml from "./trap.html";
 
 const SESSION_TTL = 60 * 60 * 24 * 30;
+const MINI_APP_AUTH_MAX_AGE = 60 * 60 * 24;
 const LIFE_PACKS = { 10: 1, 50: 7, 100: 15 };
 let schemaReady;
 
@@ -49,6 +50,48 @@ const SCHEMA = [
 
 function now() {
   return Math.floor(Date.now() / 1000);
+}
+
+async function hmacSha256(key, value) {
+  const encoder = new TextEncoder();
+  const rawKey = typeof key === "string" ? encoder.encode(key) : key;
+  const cryptoKey = await crypto.subtle.importKey("raw", rawKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(value)));
+}
+
+function bytesToHex(bytes) {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function safeEqual(left, right) {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return difference === 0;
+}
+
+async function validateMiniAppInitData(env, raw) {
+  if (!env.BOT_TOKEN || typeof raw !== "string" || !raw || raw.length > 16_384) return null;
+  const params = new URLSearchParams(raw);
+  const receivedHash = String(params.get("hash") || "").toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(receivedHash)) return null;
+  params.delete("hash");
+  const dataCheckString = [...params.entries()]
+    .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  const secretKey = await hmacSha256("WebAppData", env.BOT_TOKEN);
+  const expectedHash = bytesToHex(await hmacSha256(secretKey, dataCheckString));
+  if (!safeEqual(expectedHash, receivedHash)) return null;
+  const authDate = clampInt(params.get("auth_date"), 1, Number.MAX_SAFE_INTEGER);
+  if (authDate > now() + 300 || now() - authDate > MINI_APP_AUTH_MAX_AGE) return null;
+  try {
+    const user = JSON.parse(params.get("user") || "null");
+    if (!user || user.is_bot || !Number.isSafeInteger(Number(user.id)) || Number(user.id) < 1) return null;
+    return { user, authDate };
+  } catch {
+    return null;
+  }
 }
 
 function clampInt(value, lo, hi, fallback = 0) {
@@ -166,18 +209,26 @@ async function getPlayer(env, userId) {
   };
 }
 
-async function createSession(env, query) {
-  const userId = await ensurePlayer(env, query.from);
+async function createSessionForUser(env, user, details = {}) {
+  const userId = await ensurePlayer(env, user);
   const token = `${crypto.randomUUID()}${crypto.randomUUID().replaceAll("-", "")}`;
-  const message = query.message || {};
   await env.DB.batch([
     env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now()),
     env.DB.prepare(
       `INSERT INTO sessions(token, user_id, chat_id, message_id, inline_message_id, expires_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(token, userId, message.chat?.id ?? null, message.message_id ?? null, query.inline_message_id ?? null, now() + SESSION_TTL, now()),
+    ).bind(token, userId, details.chatId ?? null, details.messageId ?? null, details.inlineMessageId ?? null, now() + SESSION_TTL, now()),
   ]);
   return token;
+}
+
+async function createSession(env, query) {
+  const message = query.message || {};
+  return createSessionForUser(env, query.from, {
+    chatId: message.chat?.id ?? null,
+    messageId: message.message_id ?? null,
+    inlineMessageId: query.inline_message_id ?? null,
+  });
 }
 
 function requestToken(request, url, body) {
@@ -291,6 +342,18 @@ async function applySuccessfulPayment(env, message) {
   });
 }
 
+async function sendPlayButton(env, chatId, origin, text = "TRAP is ready.") {
+  const gameUrl = new URL("/game", env.PUBLIC_BASE_URL || origin);
+  if (String(env.GAME_BETA || "0") === "1") gameUrl.searchParams.set("beta", "1");
+  return telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text,
+    reply_markup: {
+      inline_keyboard: [[{ text: "▶ PLAY", web_app: { url: gameUrl.toString() } }]],
+    },
+  });
+}
+
 async function handleTelegramUpdate(env, update, origin) {
   if (update.pre_checkout_query) {
     const [ok, error] = await validatePreCheckout(env, update.pre_checkout_query);
@@ -333,18 +396,22 @@ async function handleTelegramUpdate(env, update, origin) {
   await ensurePlayer(env, message.from || { id: chatId, first_name: "Player" });
   const text = String(message.text || "").trim().toLowerCase();
   if (text.startsWith("/start") || text.startsWith("/play")) {
-    await telegram(env, "sendGame", { chat_id: chatId, game_short_name: env.GAME_SHORT_NAME || "trap_game" });
+    await sendPlayButton(env, chatId, origin);
   } else if (text.startsWith("/score") || text.startsWith("/scores")) {
-    await telegram(env, "sendMessage", { chat_id: chatId, text: "🏆 Scores are inside the game. Open TRAP and tap SCORES." });
-    await telegram(env, "sendGame", { chat_id: chatId, game_short_name: env.GAME_SHORT_NAME || "trap_game" });
+    await sendPlayButton(env, chatId, origin, "🏆 Open TRAP and tap SCORES.");
   } else if (text) {
-    await telegram(env, "sendMessage", { chat_id: chatId, text: "Send /play to open TRAP. Saves, scores and the leaderboard are available inside the game." });
-    await telegram(env, "sendGame", { chat_id: chatId, game_short_name: env.GAME_SHORT_NAME || "trap_game" });
+    await sendPlayButton(env, chatId, origin);
   }
 }
 
 async function handleApi(request, env, url) {
   const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
+  if (url.pathname === "/api/session/mini-app" && request.method === "POST") {
+    const validated = await validateMiniAppInitData(env, body.init_data);
+    if (!validated) return json({ ok: false, error: "invalid Telegram Mini App data" }, 401);
+    const token = await createSessionForUser(env, validated.user, { chatId: Number(validated.user.id) });
+    return json({ ok: true, token, expires_in: SESSION_TTL, user_id: Number(validated.user.id) });
+  }
   const session = await getSession(env, requestToken(request, url, body));
   if (!session) return json({ ok: false, error: "invalid session" }, 401);
   const userId = Number(session.user_id);

@@ -213,9 +213,9 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v22</div>
+<div id="versionTag">v23</div>
 
-<script defer src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
 (()=>{
 "use strict";
@@ -228,10 +228,17 @@ const FW=16, FH=14, GROUND_Y=11;
 // false = звичайний режим із життями
 const URL_PARAMS=new URLSearchParams(location.search);
 const BETA_TEST_MODE = URL_PARAMS.get('beta')==='1';
-const TG_SESSION=URL_PARAMS.get('tg_session')||'';
+let TG_SESSION=URL_PARAMS.get('tg_session')||'';
 const API_BASE=(URL_PARAMS.get('api')||((location.protocol==='http:'||location.protocol==='https:')?location.origin:'')).replace(/\/$/,'');
-const HAS_TELEGRAM_BACKEND=Boolean(TG_SESSION&&API_BASE);
+let HAS_TELEGRAM_BACKEND=Boolean(TG_SESSION&&API_BASE);
+const TELEGRAM_WEB_APP=window.Telegram&&Telegram.WebApp;
+const MINI_APP_INIT_DATA=String(TELEGRAM_WEB_APP&&TELEGRAM_WEB_APP.initData||'');
+const IS_MINI_APP=Boolean(MINI_APP_INIT_DATA);
 const LOCAL_SAVE_KEY='trap_progress_v18';
+
+if(TELEGRAM_WEB_APP){
+  try{ TELEGRAM_WEB_APP.ready(); TELEGRAM_WEB_APP.expand(); }catch(_){ }
+}
 
 const PW=0.8, PH=1.8;
 const SPEED=6.5, JUMP_V=20, GRAV=57.2, MAXFALL=32;
@@ -1143,6 +1150,19 @@ function localSave(progress){
 function localLoad(){
   try{ const v=JSON.parse(localStorage.getItem(LOCAL_SAVE_KEY)||'null'); return v&&v.progress?v:null; }catch(_){ return null; }
 }
+async function initializeTelegramSession(){
+  if(HAS_TELEGRAM_BACKEND) return true;
+  if(!IS_MINI_APP||!API_BASE) return false;
+  try{
+    const response=await fetch(API_BASE+'/api/session/mini-app',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({init_data:MINI_APP_INIT_DATA})
+    });
+    let data={}; try{data=await response.json();}catch(_){ }
+    if(!response.ok||!data.token) return false;
+    TG_SESSION=String(data.token); HAS_TELEGRAM_BACKEND=true;
+    return true;
+  }catch(_){ return false; }
+}
 async function apiRequest(path,options={}){
   if(!HAS_TELEGRAM_BACKEND) throw new Error('Telegram backend is unavailable');
   const headers={...(options.headers||{}),Authorization:'Bearer '+TG_SESSION};
@@ -1284,6 +1304,7 @@ function showResume(progress){
 async function initializeSave(){
   if(BETA_TEST_MODE){ ovB.disabled=false; return; }
   ovB.disabled=true; ovB.textContent='Loading save…';
+  await initializeTelegramSession();
   let savedProgress=null;
   const local=localLoad();
   if(local){ remotePaymentVersion=Number(local.payment_version)||0; savedProgress=local.progress; }
@@ -1320,19 +1341,48 @@ async function buyLifePack(stars){
   lifePackButtons.forEach(b=>b.disabled=true); storeStatus.textContent='Creating Telegram Stars invoice…';
   await persistSnapshot(serializeProgress('game_over'));
   try{
-    const delivery=usesMobileTelegram()?'chat':'link';
+    const nativeInvoice=canOpenNativeInvoice();
+    const delivery=nativeInvoice?'link':(usesMobileTelegram()?'chat':'link');
     const data=await apiRequest('/api/invoice',{method:'POST',body:JSON.stringify({stars,delivery})});
     if(data.delivery==='chat'){
       storeStatus.textContent='Invoice sent to the bot chat. Tap Back, pay it in Telegram, then reopen the game.';
+    }else if(nativeInvoice){
+      openNativeTelegramInvoice(data.invoice_url,stars);
     }else{
       openTelegramInvoiceLink(data.invoice_url);
     }
   }catch(err){ storeStatus.textContent=err.message||'Could not create invoice.'; }
   finally{ lifePackButtons.forEach(b=>b.disabled=false); }
 }
+function canOpenNativeInvoice(){
+  return Boolean(IS_MINI_APP&&TELEGRAM_WEB_APP&&typeof TELEGRAM_WEB_APP.openInvoice==='function'&&
+    (!TELEGRAM_WEB_APP.isVersionAtLeast||TELEGRAM_WEB_APP.isVersionAtLeast('6.1')));
+}
+function schedulePaymentRefresh(){
+  for(const delay of [400,1200,3000,6000]) setTimeout(()=>refreshRemoteState(true),delay);
+}
+async function sendInvoiceToChat(stars){
+  try{
+    await apiRequest('/api/invoice',{method:'POST',body:JSON.stringify({stars,delivery:'chat'})});
+    storeStatus.textContent='Invoice sent to the bot chat. Tap Back, pay it in Telegram, then reopen the game.';
+  }catch(err){ storeStatus.textContent=err.message||'Could not send invoice to the bot chat.'; }
+}
+function openNativeTelegramInvoice(url,stars){
+  storeStatus.textContent='Opening Telegram Stars invoice…';
+  try{
+    TELEGRAM_WEB_APP.openInvoice(url,status=>{
+      if(status==='unsupported'){ sendInvoiceToChat(stars); return; }
+      if(status==='paid'||status==='pending'){
+        storeStatus.textContent=status==='paid'?'Payment received. Restoring lives…':'Payment is processing…';
+        schedulePaymentRefresh();
+      }else{
+        storeStatus.textContent=status==='cancelled'?'Payment cancelled.':'Invoice '+status+'.';
+      }
+    });
+  }catch(_){ sendInvoiceToChat(stars); }
+}
 function usesMobileTelegram(){
-  const webApp=window.Telegram&&Telegram.WebApp;
-  const platform=String(webApp&&webApp.platform||'').toLowerCase();
+  const platform=String(TELEGRAM_WEB_APP&&TELEGRAM_WEB_APP.platform||'').toLowerCase();
   return platform==='ios'||platform==='android'||/Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
 }
 function openTelegramInvoiceLink(url){
@@ -2011,7 +2061,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v22-mobile-chat-invoices'
+    buildId:'v23-main-mini-app'
   };
 }
 })();
