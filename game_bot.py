@@ -92,6 +92,7 @@ def default_progress() -> dict[str, Any]:
         "checkpoint": 0,
         "deaths": 0,
         "lives": 3,
+        "paidLives": 0,
         "coins": 0,
         "got": [],
         "bonusLives": [],
@@ -248,9 +249,21 @@ def get_player(user_id: int) -> dict[str, Any]:
     if row is None:
         raise KeyError("player not found")
     try:
-        progress = json.loads(row["progress_json"])
+        raw_progress = json.loads(row["progress_json"])
     except Exception:
-        progress = default_progress()
+        raw_progress = {}
+    needs_paid_lives_migration = not isinstance(raw_progress, dict) or "paidLives" not in raw_progress
+    progress = sanitize_progress(raw_progress)
+    if needs_paid_lives_migration:
+        with DB_LOCK, db_connect() as con:
+            purchases = con.execute(
+                "SELECT COALESCE(SUM(lives), 0) FROM payments WHERE user_id=?", (user_id,)
+            ).fetchone()[0]
+            progress["paidLives"] = min(progress["lives"], clamp_int(purchases, 0, 999))
+            con.execute(
+                "UPDATE players SET progress_json=? WHERE user_id=?",
+                (json.dumps(progress, ensure_ascii=False), user_id),
+            )
     return {
         "user_id": user_id,
         "first_name": row["first_name"],
@@ -280,6 +293,7 @@ def sanitize_progress(raw: Any) -> dict[str, Any]:
     progress["checkpoint"] = clamp_int(raw.get("checkpoint"), 0, 30)
     progress["deaths"] = clamp_int(raw.get("deaths"), 0, 10_000_000)
     progress["lives"] = clamp_int(raw.get("lives"), 0, 999)
+    progress["paidLives"] = clamp_int(raw.get("paidLives"), 0, progress["lives"])
     progress["coins"] = clamp_int(raw.get("coins"), 0, 100)
     progress["hiddenOn"] = bool(raw.get("hiddenOn"))
     progress["reqKnown"] = bool(raw.get("reqKnown"))
@@ -297,15 +311,24 @@ def sanitize_progress(raw: Any) -> dict[str, Any]:
 
 
 def save_progress(user_id: int, raw: Any, payment_version: int) -> tuple[bool, dict[str, Any]]:
+    submitted_paid_lives = isinstance(raw, dict) and "paidLives" in raw
     progress = sanitize_progress(raw)
     with DB_LOCK, db_connect() as con:
         current = con.execute(
-            "SELECT payment_version FROM players WHERE user_id=?", (user_id,)
+            "SELECT payment_version, progress_json FROM players WHERE user_id=?", (user_id,)
         ).fetchone()
         if current is None:
             raise KeyError("player not found")
         if int(current["payment_version"]) != int(payment_version):
             return False, get_player(user_id)
+        try:
+            current_progress = sanitize_progress(json.loads(current["progress_json"]))
+        except Exception:
+            current_progress = default_progress()
+        if submitted_paid_lives:
+            progress["paidLives"] = min(progress["paidLives"], current_progress["paidLives"])
+        else:
+            progress["paidLives"] = min(progress["lives"], current_progress["paidLives"])
         con.execute(
             "UPDATE players SET progress_json=?, updated_at=? WHERE user_id=?",
             (json.dumps(progress, ensure_ascii=False), now(), user_id),
@@ -497,6 +520,9 @@ def apply_successful_payment(msg: dict[str, Any]) -> None:
         except Exception:
             progress = default_progress()
         progress["lives"] = clamp_int(progress.get("lives", 0) + int(invoice["lives"]), 0, 999)
+        progress["paidLives"] = clamp_int(
+            progress.get("paidLives", 0) + int(invoice["lives"]), 0, progress["lives"]
+        )
         progress["screen"] = "level_start"
         con.execute(
             "INSERT INTO payments(telegram_charge_id, user_id, payload, stars, lives, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -722,6 +748,10 @@ class GameHTTPHandler(BaseHTTPRequestHandler):
 
         if path == "/api/invoice":
             stars = clamp_int(body.get("stars"), 0, 1000)
+            player = get_player(user_id)
+            if int(player["progress"].get("lives", 0)) > 0:
+                self._json(409, {"ok": False, "error": "life packs are only available at zero lives"})
+                return
             link = create_invoice(user_id, stars)
             if not link:
                 self._json(400, {"ok": False, "error": "invalid life pack"})
@@ -732,6 +762,8 @@ class GameHTTPHandler(BaseHTTPRequestHandler):
         if path == "/api/reset":
             player = get_player(user_id)
             fresh = default_progress()
+            fresh["paidLives"] = int(player["progress"].get("paidLives", 0))
+            fresh["lives"] = clamp_int(fresh["lives"] + fresh["paidLives"], 0, 999)
             ok, updated = save_progress(user_id, fresh, player["payment_version"])
             self._json(200 if ok else 409, {"ok": ok, **updated})
             return

@@ -105,6 +105,7 @@ function defaultProgress() {
     checkpoint: 0,
     deaths: 0,
     lives: 3,
+    paidLives: 0,
     coins: 0,
     got: [],
     bonusLives: [],
@@ -123,6 +124,7 @@ function sanitizeProgress(raw) {
   progress.checkpoint = clampInt(raw.checkpoint, 0, 30);
   progress.deaths = clampInt(raw.deaths, 0, 10_000_000);
   progress.lives = clampInt(raw.lives, 0, 999);
+  progress.paidLives = clampInt(raw.paidLives, 0, progress.lives);
   progress.coins = clampInt(raw.coins, 0, 100);
   progress.hiddenOn = Boolean(raw.hiddenOn);
   progress.reqKnown = Boolean(raw.reqKnown);
@@ -139,9 +141,13 @@ function sanitizeProgress(raw) {
 
 function parseProgress(value) {
   try {
-    return sanitizeProgress(JSON.parse(value));
+    const raw = JSON.parse(value);
+    return {
+      progress: sanitizeProgress(raw),
+      needsPaidLivesMigration: !raw || typeof raw !== "object" || !Object.prototype.hasOwnProperty.call(raw, "paidLives"),
+    };
   } catch {
-    return defaultProgress();
+    return { progress: defaultProgress(), needsPaidLivesMigration: true };
   }
 }
 
@@ -196,11 +202,19 @@ async function ensurePlayer(env, user) {
 async function getPlayer(env, userId) {
   const row = await env.DB.prepare("SELECT * FROM players WHERE user_id=?").bind(userId).first();
   if (!row) return null;
+  const parsed = parseProgress(row.progress_json);
+  if (parsed.needsPaidLivesMigration) {
+    const purchases = await env.DB.prepare("SELECT COALESCE(SUM(lives), 0) AS lives FROM payments WHERE user_id=?")
+      .bind(userId).first();
+    parsed.progress.paidLives = Math.min(parsed.progress.lives, clampInt(purchases?.lives, 0, 999));
+    await env.DB.prepare("UPDATE players SET progress_json=? WHERE user_id=?")
+      .bind(JSON.stringify(parsed.progress), userId).run();
+  }
   return {
     user_id: Number(row.user_id),
     first_name: row.first_name,
     username: row.username,
-    progress: parseProgress(row.progress_json),
+    progress: parsed.progress,
     payment_version: Number(row.payment_version),
     best_level: Number(row.best_level),
     best_deaths: Number(row.best_deaths),
@@ -328,6 +342,7 @@ async function applySuccessfulPayment(env, message) {
   if (!player) return;
   const progress = player.progress;
   progress.lives = clampInt(progress.lives + Number(invoice.lives), 0, 999);
+  progress.paidLives = clampInt(progress.paidLives + Number(invoice.lives), 0, progress.lives);
   progress.screen = "level_start";
   await env.DB.batch([
     env.DB.prepare("INSERT OR IGNORE INTO payments(telegram_charge_id, user_id, payload, stars, lives, created_at) VALUES (?, ?, ?, ?, ?, ?)")
@@ -420,7 +435,12 @@ async function handleApi(request, env, url) {
     return json({ ok: true, ...(await getPlayer(env, userId)) });
   }
   if (url.pathname === "/api/state" && request.method === "POST") {
+    const current = await getPlayer(env, userId);
     const progress = sanitizeProgress(body.progress);
+    const submittedPaidLives = Object.prototype.hasOwnProperty.call(body.progress || {}, "paidLives");
+    progress.paidLives = submittedPaidLives
+      ? Math.min(progress.paidLives, current.progress.paidLives)
+      : Math.min(progress.lives, current.progress.paidLives);
     const result = await env.DB.prepare(
       "UPDATE players SET progress_json=?, updated_at=? WHERE user_id=? AND payment_version=?",
     ).bind(JSON.stringify(progress), now(), userId, clampInt(body.payment_version, 0, 1_000_000)).run();
@@ -447,14 +467,19 @@ async function handleApi(request, env, url) {
   if (url.pathname === "/api/invoice" && request.method === "POST") {
     const stars = clampInt(body.stars, 0, 1000);
     if (!LIFE_PACKS[stars]) return json({ ok: false, error: "invalid life pack" }, 400);
+    const player = await getPlayer(env, userId);
+    if (player.progress.lives > 0) return json({ ok: false, error: "life packs are only available at zero lives" }, 409);
     const requestedDelivery = body.delivery === "chat" ? "chat" : "link";
     const invoice = await createInvoice(env, userId, stars, session.chat_id, requestedDelivery);
     return json({ ok: true, ...invoice, stars, lives: LIFE_PACKS[stars] });
   }
   if (url.pathname === "/api/reset" && request.method === "POST") {
     const player = await getPlayer(env, userId);
+    const fresh = defaultProgress();
+    fresh.paidLives = player.progress.paidLives;
+    fresh.lives = clampInt(fresh.lives + fresh.paidLives, 0, 999);
     const result = await env.DB.prepare("UPDATE players SET progress_json=?, updated_at=? WHERE user_id=? AND payment_version=?")
-      .bind(JSON.stringify(defaultProgress()), now(), userId, player.payment_version).run();
+      .bind(JSON.stringify(fresh), now(), userId, player.payment_version).run();
     const updated = await getPlayer(env, userId);
     return json({ ok: Number(result.meta.changes) === 1, ...updated }, Number(result.meta.changes) === 1 ? 200 : 409);
   }

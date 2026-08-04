@@ -40,6 +40,8 @@
   .cnt.bump{transform:scale(1.24)}
   #coins{color:var(--gold)} #creq{color:var(--bone-dim);font-size:.62em}
   #deaths{color:#8d3838} #lives{color:var(--blood-bright)}
+  #paidnum{display:block;min-height:8px;margin-top:4px;color:var(--gold);font-family:"Helvetica Neue",Arial,sans-serif;
+           font-size:7px;line-height:1;letter-spacing:.08em;text-shadow:none;white-space:nowrap}
   #scoreHudBtn{appearance:none;border:1px solid #49373e;background:linear-gradient(180deg,#171219,#090a0e);
                color:var(--gold);min-width:48px;height:42px;padding:4px 6px;cursor:pointer;touch-action:manipulation;
                font-weight:900;box-shadow:0 5px 14px rgba(0,0,0,.32)}
@@ -150,7 +152,7 @@
 <div id="hud">
   <div id="lvl">Level 1</div>
   <div class="cnt" id="coins"><small>COINS</small><span id="cnum">0</span><span id="creq">/?</span></div>
-  <div class="cnt" id="lives"><small>LIVES</small><span id="lnum">3</span></div>
+  <div class="cnt" id="lives"><small>LIVES</small><span id="lnum">3</span><span id="paidnum"></span></div>
   <div class="cnt" id="deaths"><small>DEATHS</small><span id="dnum">0</span></div>
   <button id="scoreHudBtn" class="scoreControl" type="button" aria-label="Open scores"><span>🏆</span><small>SCORES</small></button>
 </div>
@@ -184,7 +186,7 @@
   <div id="resumeInfo"></div>
   <div id="lifeStore" aria-hidden="true">
     <div id="lifeStoreTitle">CONTINUE WITH TELEGRAM STARS</div>
-    <div id="lifeStoreSub">The purchase is credited to your Telegram account and restores this checkpoint.</div>
+    <div id="lifeStoreSub">The purchase is credited to your Telegram account and restores this checkpoint. Unused paid lives remain after completing the game.</div>
     <div id="lifePacks">
       <button class="lifePack" type="button" data-stars="10"><strong>+1 LIFE</strong><span>10 ⭐</span></button>
       <button class="lifePack" type="button" data-stars="50"><strong>+7 LIVES</strong><span>50 ⭐</span></button>
@@ -213,7 +215,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v25</div>
+<div id="versionTag">v26</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -254,7 +256,7 @@ const REACH=SPEED*2*JUMP_V/GRAV;            // ≈4.55 тайла
 const cv=document.getElementById('c'), ctx=cv.getContext('2d');
 const lvlEl=document.getElementById('lvl');
 const dnum=document.getElementById('dnum'), dbox=document.getElementById('deaths');
-const lnum=document.getElementById('lnum'), lbox=document.getElementById('lives');
+const lnum=document.getElementById('lnum'), paidnum=document.getElementById('paidnum'), lbox=document.getElementById('lives');
 const cnum=document.getElementById('cnum'), creq=document.getElementById('creq'),
       cbox=document.getElementById('coins');
 const ov=document.getElementById('overlay'), ovT=document.getElementById('ovTitle'),
@@ -1070,7 +1072,7 @@ const LEVELS=[
 /* ================= стан ================= */
 let LI=0, L=LEVELS[0], T={};
 const state={
-  deaths:0, lives:3, bonusLives:new Set(), gameOverPending:false, cp:0, coins:0, req:1, reqKnown:false, got:new Set(),
+  deaths:0, lives:3, paidLives:0, bonusLives:new Set(), gameOverPending:false, cp:0, coins:0, req:1, reqKnown:false, got:new Set(),
   hiddenOn:false, flagLock:false,
   coinFx:null, weight:null, wall:null, proj:null, bossShots:[], crumb:[],
   deathFx:[], bloodFx:[], dead:0, won:false, running:false, shake:0, flash:0, saveMsg:0, saveTxt:'', rejectMsg:0, flags:{}, revealed:new Set()
@@ -1079,11 +1081,14 @@ const p={x:1,y:GROUND_Y-PH,vx:0,vy:0,onG:false,coyote:0,buf:0,face:1,anim:0,airV
 
 function updateLives(){
   lnum.textContent=BETA_TEST_MODE?'∞':state.lives;
-  lbox.title=BETA_TEST_MODE?'BETA TEST: infinite lives':'Lives remaining';
+  paidnum.textContent=!BETA_TEST_MODE&&state.paidLives>0?state.paidLives+' PAID':'';
+  lbox.title=BETA_TEST_MODE?'BETA TEST: infinite lives':state.paidLives>0
+    ? state.lives+' lives remaining · '+state.paidLives+' purchased'
+    : 'Lives remaining';
   lbox.classList.add('bump'); setTimeout(()=>lbox.classList.remove('bump'),110);
 }
 function resetRun(){
-  state.deaths=0; state.lives=3; state.bonusLives=new Set(); state.gameOverPending=false;
+  state.deaths=0; state.lives=3+state.paidLives; state.bonusLives=new Set(); state.gameOverPending=false;
   dnum.textContent='0'; updateLives();
 }
 function buildGrid(){
@@ -1142,7 +1147,7 @@ function loadLevel(i){
 /* ================= Telegram saves / in-game scores / Stars ================= */
 function serializeProgress(screen='playing'){
   return {
-    level:LI, checkpoint:state.cp, deaths:state.deaths, lives:state.lives,
+    level:LI, checkpoint:state.cp, deaths:state.deaths, lives:state.lives, paidLives:state.paidLives,
     coins:state.coins, got:[...state.got], bonusLives:[...state.bonusLives],
     hiddenOn:state.hiddenOn, reqKnown:state.reqKnown, flags:{...state.flags},
     screen, completed:screen==='game_complete'
@@ -1280,6 +1285,7 @@ function applyProgress(progress){
   state.cp=Math.max(0,Math.min(L.checks.length-1,Number(progress.checkpoint)||0));
   state.deaths=Math.max(0,Number(progress.deaths)||0);
   state.lives=Math.max(0,Number(progress.lives)||0);
+  state.paidLives=Math.max(0,Math.min(state.lives,Number(progress.paidLives)||0));
   state.coins=Math.max(0,Number(progress.coins)||0);
   state.req=L.req; state.reqKnown=Boolean(progress.reqKnown);
   state.got=new Set(Array.isArray(progress.got)?progress.got:[]);
@@ -1292,7 +1298,16 @@ function applyProgress(progress){
   return true;
 }
 function showResume(progress){
-  if(BETA_TEST_MODE||!progress||progress.completed) return;
+  if(BETA_TEST_MODE||!progress) return;
+  if(progress.completed){
+    state.paidLives=Math.max(0,Number(progress.paidLives)||0);
+    state.lives=3+state.paidLives; updateLives();
+    if(state.paidLives>0){
+      resumeInfo.innerHTML='<b style="color:var(--gold)">PURCHASED RESERVE</b><br>'+state.paidLives+' paid '+(state.paidLives===1?'life':'lives')+' saved · new run starts with 3 free lives';
+      resumeInfo.classList.add('show');
+    }
+    return;
+  }
   if(Number(progress.lives)<=0){
     resumeProgress=null; resumeInfo.classList.remove('show');
     if(applyProgress(progress)) showGameOverOverlay();
@@ -1302,7 +1317,8 @@ function showResume(progress){
   setLifeStoreVisible(false);
   const level=Math.max(0,Math.min(9,Number(progress.level)||0))+1;
   const cp=Math.max(0,Number(progress.checkpoint)||0)+1;
-  resumeInfo.innerHTML='<b style="color:var(--gold)">SAVED GAME</b><br>Level '+level+' · checkpoint '+cp+' · '+(Number(progress.deaths)||0)+' deaths · '+(Number(progress.lives)||0)+' lives';
+  const paid=Math.max(0,Number(progress.paidLives)||0);
+  resumeInfo.innerHTML='<b style="color:var(--gold)">SAVED GAME</b><br>Level '+level+' · checkpoint '+cp+' · '+(Number(progress.deaths)||0)+' deaths · '+(Number(progress.lives)||0)+' lives'+(paid?' · '+paid+' paid':'');
   resumeInfo.classList.add('show');
   ovB.textContent='Continue Level '+level; ovB.dataset.act='resume';
 }
@@ -1626,7 +1642,11 @@ function die(){
   if(state.dead>0||state.won) return;
   spawnDeathFx();
   state.dead=0.88; state.deaths++;
-  if(!BETA_TEST_MODE) state.lives=Math.max(0,state.lives-1);
+  if(!BETA_TEST_MODE){
+    const freeLives=Math.max(0,state.lives-state.paidLives);
+    state.lives=Math.max(0,state.lives-1);
+    if(freeLives<=0&&state.paidLives>0) state.paidLives--;
+  }
   state.gameOverPending=!BETA_TEST_MODE&&state.lives<=0;
   state.shake=0.72; state.flash=0.46;
   dnum.textContent=state.deaths; updateLives();
@@ -1675,7 +1695,9 @@ function win(){
   }
   ovT.textContent=last?'THE NIGHTMARE ENDS':(L.name.toUpperCase()+' CLEARED');
   ovS.innerHTML=(state.req>0?('Coins: <b style="color:var(--gold)">'+state.coins+' / '+state.req+'</b><br>'):'')+
-    'Lives: <b style="color:var(--blood-bright)">'+(BETA_TEST_MODE?'∞ · BETA':state.lives)+'</b><br>Total deaths: <b style="color:var(--blood)">'+state.deaths+'</b>'+bonus+
+    'Lives: <b style="color:var(--blood-bright)">'+(BETA_TEST_MODE?'∞ · BETA':state.lives)+'</b>'+
+    (!BETA_TEST_MODE&&state.paidLives?'<br>Paid reserve: <b style="color:var(--gold)">'+state.paidLives+'</b>':'')+
+    '<br>Total deaths: <b style="color:var(--blood)">'+state.deaths+'</b>'+bonus+
     (last?'<br><br>You survived all ten rooms.':'<br><br>The next room is worse.');
   ovB.textContent=last?'Restart':'Next';
   ovB.dataset.act=last?'restart':'next';
@@ -2081,7 +2103,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v25-session-state-race-fix'
+    buildId:'v26-paid-life-reserve'
   };
 }
 })();
