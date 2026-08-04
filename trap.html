@@ -1266,7 +1266,7 @@ async function shareChallengeResult(result,button,statusElement){
       nativeShareStarted=true;
       statusElement.textContent='Choose a friend or group in Telegram…';
       TELEGRAM_WEB_APP.shareMessage(data.messageId,sent=>{
-        statusElement.textContent=sent?'Challenge sent! Your reward unlocks when the new player clears Level 1.':'Sharing cancelled.';
+        statusElement.textContent=sent?'Challenge sent! When a new player clears Level 1, you both get +5 referral lives.':'Sharing cancelled.';
         if(sent) trackEvent('share_sent',{level:result.level,deaths:result.deaths,context:result.context});
         button.disabled=false;
       });
@@ -1871,13 +1871,23 @@ function win(){
   setLifeStoreVisible(false);
   const saved=serializeProgress(last?'game_complete':'level_complete');
   if(!last){ saved.level=LI+1; saved.checkpoint=0; saved.coins=0; saved.got=[]; saved.hiddenOn=false; saved.reqKnown=false; saved.flags={}; }
-  Promise.resolve(persistSnapshot(saved,true)).finally(()=>{
-    trackEvent('level_complete',{level:completedLevel,deaths:completedDeaths,context:last?'game_complete':'level_complete'});
+  Promise.resolve(persistSnapshot(saved,true)).finally(async()=>{
+    const result=await trackEvent('level_complete',{level:completedLevel,deaths:completedDeaths,context:last?'game_complete':'level_complete'});
+    if(result&&result.reward) applyReferralReward(result.reward);
     if(last) trackEvent('game_complete',{level:completedLevel,deaths:completedDeaths,context:'game_complete'});
   });
   submitScore(completedLevel);
   setBetaPickerVisible(last);
   ov.classList.remove('hidden');
+}
+function applyReferralReward(reward){
+  const amount=Math.max(0,Number(reward&&reward.rewardLivesEach)||0);
+  const progress=reward&&reward.referredProgress;
+  if(!amount||!progress) return;
+  state.rewardLives=Math.max(state.rewardLives,Number(progress.rewardLives)||0);
+  remotePaymentVersion=Math.max(remotePaymentVersion,Number(reward.referredPaymentVersion)||0);
+  localSave(progress); updateLives();
+  if(state.won) ovS.insertAdjacentHTML('beforeend','<br><b style="color:var(--gold)">+'+amount+' REFERRAL LIVES</b><br><span style="color:var(--bone-dim)">YOU AND YOUR INVITER WERE REWARDED</span>');
 }
 
 /* ================= апдейт ================= */
@@ -2293,7 +2303,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v32-photo-referral-share'
+    buildId:'v33-five-lives-both'
   };
 }
 })();

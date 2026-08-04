@@ -6,6 +6,7 @@ const MINI_APP_AUTH_MAX_AGE = 60 * 60 * 24;
 const LIFE_PACKS = { 10: 1, 50: 7, 100: 15 };
 const LIFE_BALANCE_VERSION = 3;
 const REWARD_LIVES_MAX = 1_000_000;
+const REFERRAL_REWARD_LIVES = 5;
 const TERMS_VERSION = 2;
 const TERMS_TEXT = `TRAP TERMS & REFUND POLICY (version 2)
 
@@ -476,13 +477,39 @@ async function qualifyReferral(env, referredUserId) {
     env.DB.prepare(
       `UPDATE players SET
        progress_json=json_set(progress_json,
-         '$.rewardLives', MIN(?, COALESCE(CAST(json_extract(progress_json, '$.rewardLives') AS INTEGER), 0) + 1),
+         '$.rewardLives', MIN(?, COALESCE(CAST(json_extract(progress_json, '$.rewardLives') AS INTEGER), 0) + ?),
          '$.lifeBalanceVersion', ?),
        payment_version=payment_version+1, updated_at=?
        WHERE user_id=? AND EXISTS (
          SELECT 1 FROM referrals WHERE referred_user_id=? AND reward_token=?
        )`,
-    ).bind(REWARD_LIVES_MAX, LIFE_BALANCE_VERSION, timestamp, referral.referrer_user_id, referredUserId, rewardToken),
+    ).bind(
+      REWARD_LIVES_MAX,
+      REFERRAL_REWARD_LIVES,
+      LIFE_BALANCE_VERSION,
+      timestamp,
+      referral.referrer_user_id,
+      referredUserId,
+      rewardToken,
+    ),
+    env.DB.prepare(
+      `UPDATE players SET
+       progress_json=json_set(progress_json,
+         '$.rewardLives', MIN(?, COALESCE(CAST(json_extract(progress_json, '$.rewardLives') AS INTEGER), 0) + ?),
+         '$.lifeBalanceVersion', ?),
+       payment_version=payment_version+1, updated_at=?
+       WHERE user_id=? AND EXISTS (
+         SELECT 1 FROM referrals WHERE referred_user_id=? AND reward_token=?
+       )`,
+    ).bind(
+      REWARD_LIVES_MAX,
+      REFERRAL_REWARD_LIVES,
+      LIFE_BALANCE_VERSION,
+      timestamp,
+      referredUserId,
+      referredUserId,
+      rewardToken,
+    ),
     env.DB.prepare(
       `INSERT OR IGNORE INTO analytics_events(user_id, event_name, event_key, level, value, metadata_json, created_at)
        SELECT ?, 'referral_qualified', ?, 1, 1, ?, ?
@@ -497,25 +524,53 @@ async function qualifyReferral(env, referredUserId) {
     ),
     env.DB.prepare(
       `INSERT OR IGNORE INTO analytics_events(user_id, event_name, event_key, level, value, metadata_json, created_at)
-       SELECT ?, 'reward_granted', ?, NULL, 1, ?, ?
+       SELECT ?, 'reward_granted', ?, NULL, ?, ?, ?
        WHERE EXISTS (SELECT 1 FROM referrals WHERE referred_user_id=? AND reward_token=?)`,
     ).bind(
       referral.referrer_user_id,
-      `reward_granted:${referredUserId}`,
-      safeMetadata({ referred_user_id: referredUserId, code: referral.code }),
+      `reward_granted:referrer:${referredUserId}`,
+      REFERRAL_REWARD_LIVES,
+      safeMetadata({ role: "referrer", referred_user_id: referredUserId, code: referral.code }),
+      timestamp,
+      referredUserId,
+      rewardToken,
+    ),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO analytics_events(user_id, event_name, event_key, level, value, metadata_json, created_at)
+       SELECT ?, 'reward_granted', ?, NULL, ?, ?, ?
+       WHERE EXISTS (SELECT 1 FROM referrals WHERE referred_user_id=? AND reward_token=?)`,
+    ).bind(
+      referredUserId,
+      `reward_granted:invitee:${referredUserId}`,
+      REFERRAL_REWARD_LIVES,
+      safeMetadata({ role: "invitee", referrer_user_id: Number(referral.referrer_user_id), code: referral.code }),
       timestamp,
       referredUserId,
       rewardToken,
     ),
   ]);
-  if (Number(results[0]?.meta?.changes) !== 1 || Number(results[1]?.meta?.changes) !== 1) return null;
-  await sendPlayButton(
-    env,
-    Number(referral.referrer_user_id),
-    env.PUBLIC_BASE_URL || "https://trap-game.trap-games.workers.dev",
-    "🎁 Your friend cleared Level 1. You received +1 referral life!",
-  ).catch((error) => console.error(error));
-  return { referrerUserId: Number(referral.referrer_user_id), rewardLives: 1 };
+  if ([0, 1, 2].some((index) => Number(results[index]?.meta?.changes) !== 1)) return null;
+  const referredPlayer = await getPlayer(env, referredUserId);
+  await Promise.allSettled([
+    sendPlayButton(
+      env,
+      Number(referral.referrer_user_id),
+      env.PUBLIC_BASE_URL || "https://trap-game.trap-games.workers.dev",
+      "🎁 Your friend cleared Level 1. You both received +5 referral lives!",
+    ),
+    sendPlayButton(
+      env,
+      referredUserId,
+      env.PUBLIC_BASE_URL || "https://trap-game.trap-games.workers.dev",
+      "🎁 Referral complete! You and your inviter each received +5 referral lives.",
+    ),
+  ]);
+  return {
+    referrerUserId: Number(referral.referrer_user_id),
+    rewardLivesEach: REFERRAL_REWARD_LIVES,
+    referredProgress: referredPlayer.progress,
+    referredPaymentVersion: referredPlayer.payment_version,
+  };
 }
 
 async function createPreparedChallenge(env, userId, body) {
@@ -536,7 +591,7 @@ async function createPreparedChallenge(env, userId, body) {
     : `☠️ ${name} reached Level ${level} in TRAP with ${deaths} deaths.\nCan you do better?`;
   const shareText = `${messageText}\n\n` +
     `🎮 Play @trap_game_bot through my personal link:\n${link}\n\n` +
-    "🎁 NEW PLAYERS ONLY: open my link and clear Level 1 to give me +1 bonus life. Existing players don't count. Share your own result to earn yours.";
+    "🎁 NEW PLAYERS ONLY: open my link and clear Level 1 — we both get +5 bonus lives. Existing players don't count. Share your own result to earn more.";
   const imageUrl = new URL("/assets/trap-share-640x360-v2.jpg", env.PUBLIC_BASE_URL || "https://trap-game.trap-games.workers.dev").toString();
   let cachedPhotoId = null;
   try {
@@ -650,6 +705,7 @@ async function adminStatsMessage(env) {
   const levelOne = metric("level_complete_1");
   const completions = metric("game_complete");
   const shares = metric("share_sent");
+  const rewardLives = metric("reward_granted");
   const deaths = metric("death");
   const stores = metric("store_view");
   const invoices = metric("invoice_created");
@@ -674,7 +730,8 @@ async function adminStatsMessage(env) {
     `Shared challenge: ${shares.all} users · ${shares.events} sends\n\n` +
     `Referral opens: ${Number(referralRow.opened || 0)}\n` +
     `Qualified referrals: ${Number(referralRow.qualified || 0)}\n` +
-    `Rewards granted: ${Number(referralRow.rewarded || 0)}\n\n` +
+    `Rewarded referrals: ${Number(referralRow.rewarded || 0)}\n` +
+    `Referral lives granted: ${rewardLives.value} to ${rewardLives.all} players\n\n` +
     `Payments: ${Number(paymentRow.count || 0)} from ${Number(paymentRow.users || 0)} players · ${Number(paymentRow.stars || 0)} Stars\n` +
     `Refunds: ${Number(refundRow.count || 0)} · ${Number(refundRow.stars || 0)} Stars\n` +
     `Net Stars: ${Number(paymentRow.stars || 0) - Number(refundRow.stars || 0)}\n\n` +
