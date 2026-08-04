@@ -749,8 +749,8 @@ class GameHTTPHandler(BaseHTTPRequestHandler):
         if path == "/api/invoice":
             stars = clamp_int(body.get("stars"), 0, 1000)
             player = get_player(user_id)
-            if int(player["progress"].get("lives", 0)) > 0:
-                self._json(409, {"ok": False, "error": "life packs are only available at zero lives"})
+            if int(player["progress"].get("lives", 0)) > 0 or int(player["progress"].get("paidLives", 0)) > 0:
+                self._json(409, {"ok": False, "error": "life packs are only available when no lives or paid reserve remain"})
                 return
             link = create_invoice(user_id, stars)
             if not link:

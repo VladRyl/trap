@@ -215,7 +215,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v26</div>
+<div id="versionTag">v27</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -1352,7 +1352,7 @@ function showTelegramGate(){
   ovB.textContent='Open in Telegram'; ovB.dataset.act='telegram'; ovB.disabled=false;
 }
 function setLifeStoreVisible(visible){
-  const show=Boolean(visible&&!BETA_TEST_MODE);
+  const show=Boolean(visible&&!BETA_TEST_MODE&&state.lives<=0&&state.paidLives<=0);
   lifeStore.classList.toggle('show',show); lifeStore.setAttribute('aria-hidden',show?'false':'true');
 }
 async function refreshRemoteState(resume=false){
@@ -1370,6 +1370,7 @@ function resumeAfterPayment(progress){
 }
 async function buyLifePack(stars){
   if(!HAS_TELEGRAM_BACKEND){ storeStatus.textContent='Open the game from the Telegram bot to buy lives.'; return; }
+  if(state.lives>0||state.paidLives>0){ storeStatus.textContent='Life packs unlock only when no lives or paid reserve remain.'; return; }
   lifePackButtons.forEach(b=>b.disabled=true); storeStatus.textContent='Creating Telegram Stars invoice…';
   await persistSnapshot(serializeProgress('game_over'));
   try{
@@ -2103,7 +2104,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v26-paid-life-reserve'
+    buildId:'v27-store-zero-balance-gate'
   };
 }
 })();

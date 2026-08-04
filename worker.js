@@ -468,7 +468,9 @@ async function handleApi(request, env, url) {
     const stars = clampInt(body.stars, 0, 1000);
     if (!LIFE_PACKS[stars]) return json({ ok: false, error: "invalid life pack" }, 400);
     const player = await getPlayer(env, userId);
-    if (player.progress.lives > 0) return json({ ok: false, error: "life packs are only available at zero lives" }, 409);
+    if (player.progress.lives > 0 || player.progress.paidLives > 0) {
+      return json({ ok: false, error: "life packs are only available when no lives or paid reserve remain" }, 409);
+    }
     const requestedDelivery = body.delivery === "chat" ? "chat" : "link";
     const invoice = await createInvoice(env, userId, stars, session.chat_id, requestedDelivery);
     return json({ ok: true, ...invoice, stars, lives: LIFE_PACKS[stars] });
