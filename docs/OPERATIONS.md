@@ -19,10 +19,16 @@ Player flow:
 Admin flow:
 
 1. Reply to a relayed message; the bot copies the reply to the player without exposing the admin account.
-2. General tickets have a **Close** button. They cannot issue refunds.
-3. Payment tickets have **Choose refund** and **Close** buttons. The refund flow lists up to 10 exact unrefunded purchases with the Stars amount, lives, Kyiv date/time and a short reference. Selecting one requires a second **Confirm** click.
+2. General tickets have **Close** and **Block user** buttons. They cannot issue refunds.
+3. Payment tickets have **Choose refund**, **Close**, and **Block user** buttons. The refund flow lists up to 10 exact unrefunded purchases with the Stars amount, lives, Kyiv date/time and a short reference. Selecting one requires a second **Confirm** click.
 4. As a fallback, reply `/refund` to a relayed message in a payment ticket, reply `/refund TELEGRAM_CHARGE_ID` to select a particular purchase, or reply `/close` to close either ticket type.
 5. Standalone `/refund` and `/close` commands are intentionally rejected because they are not associated with a ticket ID.
+
+Blocking requires a second confirmation click. It closes every open ticket for that Telegram user and immediately denies bot callbacks, inline mode, checkout, new Mini App sessions, and API access from existing sessions. The configured administrator cannot be blocked. To restore access manually in Cloudflare D1, delete the matching row:
+
+```sql
+DELETE FROM blocked_users WHERE user_id = 123456789;
+```
 
 Refunds are intentionally unconditional and admin-controlled. If the player already consumed the purchased lives, the Stars are still returned and no consumed lives can be recovered. Every attempt is recorded in `refunds`; completed purchases remain in `payments` as an immutable audit trail.
 

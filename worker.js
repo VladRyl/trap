@@ -83,6 +83,16 @@ const SCHEMA = [
     created_at INTEGER NOT NULL,
     FOREIGN KEY(ticket_id) REFERENCES support_tickets(id)
   )`,
+  `CREATE TABLE IF NOT EXISTS blocked_users (
+    user_id INTEGER PRIMARY KEY,
+    blocked_by INTEGER NOT NULL,
+    ticket_id INTEGER,
+    reason TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES players(user_id),
+    FOREIGN KEY(ticket_id) REFERENCES support_tickets(id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_blocked_users_created ON blocked_users(created_at)`,
   `CREATE TABLE IF NOT EXISTS refunds (
     telegram_charge_id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL,
@@ -331,6 +341,7 @@ async function getPlayer(env, userId) {
 
 async function createSessionForUser(env, user, details = {}) {
   const userId = await ensurePlayer(env, user);
+  if (await isUserBlocked(env, userId)) throw new Error("blocked");
   const token = `${crypto.randomUUID()}${crypto.randomUUID().replaceAll("-", "")}`;
   await env.DB.batch([
     env.DB.prepare("DELETE FROM sessions WHERE user_id=? OR expires_at < ?").bind(userId, now()),
@@ -359,7 +370,17 @@ function requestToken(request, url, body) {
 
 async function getSession(env, token) {
   if (!token || token.length > 200) return null;
-  return env.DB.prepare("SELECT * FROM sessions WHERE token=? AND expires_at>=?").bind(token, now()).first();
+  return env.DB.prepare(
+    `SELECT s.*, b.created_at AS blocked_at FROM sessions s
+     LEFT JOIN blocked_users b ON b.user_id=s.user_id
+     WHERE s.token=? AND s.expires_at>=?`,
+  ).bind(token, now()).first();
+}
+
+async function isUserBlocked(env, userId) {
+  if (!Number.isSafeInteger(Number(userId)) || Number(userId) <= 0) return false;
+  const row = await env.DB.prepare("SELECT 1 AS blocked FROM blocked_users WHERE user_id=?").bind(Number(userId)).first();
+  return Boolean(row);
 }
 
 function scoreValue(level, deaths) {
@@ -766,12 +787,17 @@ function supportsCopiedCaption(message) {
 }
 
 function supportTicketKeyboard(ticket) {
-  const buttons = [];
+  const primary = [];
   if (ticket.kind === "payment") {
-    buttons.push({ text: "⭐ Choose refund", callback_data: `support:refund:${ticket.id}` });
+    primary.push({ text: "⭐ Choose refund", callback_data: `support:refund:${ticket.id}` });
   }
-  buttons.push({ text: `✅ Close #${ticket.id}`, callback_data: `support:close:${ticket.id}` });
-  return { inline_keyboard: [buttons] };
+  primary.push({ text: `✅ Close #${ticket.id}`, callback_data: `support:close:${ticket.id}` });
+  return {
+    inline_keyboard: [
+      primary,
+      [{ text: `🚫 Block user #${ticket.id}`, callback_data: `support:block:${ticket.id}` }],
+    ],
+  };
 }
 
 function paymentCallbackReference(payment) {
@@ -794,7 +820,7 @@ function paymentButtonText(payment) {
 }
 
 function parseSupportCallbackData(value) {
-  const legacy = /^support:(refund|confirm|cancel|close):(\d+)$/.exec(String(value || ""));
+  const legacy = /^support:(refund|confirm|cancel|close|block|block_confirm):(\d+)$/.exec(String(value || ""));
   if (legacy) return { action: legacy[1], ticketId: legacy[2], paymentReference: "" };
   const selected = /^sr:([pc]):(\d+):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
     .exec(String(value || ""));
@@ -917,6 +943,20 @@ async function closeSupportTicket(env, ticket, notifyUser = true) {
       text: `Support ticket #${ticket.id} is closed. Use /support or /paysupport to open a new one.`,
     });
   }
+}
+
+async function blockUserFromTicket(env, ticket, adminId) {
+  const timestamp = now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO blocked_users(user_id, blocked_by, ticket_id, reason, created_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET blocked_by=excluded.blocked_by, ticket_id=excluded.ticket_id,
+         reason=excluded.reason, created_at=excluded.created_at`,
+    ).bind(ticket.user_id, adminId, ticket.id, `Support ticket #${ticket.id}`, timestamp),
+    env.DB.prepare("UPDATE support_tickets SET status='closed', updated_at=? WHERE user_id=? AND status='open'")
+      .bind(timestamp, ticket.user_id),
+  ]);
 }
 
 async function handleUserMenuCallback(env, query) {
@@ -1046,6 +1086,10 @@ async function handleSupportAdminReply(env, message) {
     await telegram(env, "sendMessage", { chat_id: supportChatId, text: "⛔ Only the configured administrator can answer support tickets." });
     return true;
   }
+  if (mapping.status !== "open") {
+    await telegram(env, "sendMessage", { chat_id: supportChatId, text: `Ticket #${mapping.id} is already closed.` });
+    return true;
+  }
   const command = commandName(message);
   if (command === "/refund") {
     if (mapping.kind !== "payment") {
@@ -1127,6 +1171,38 @@ async function handleSupportCallback(env, query) {
     });
     return true;
   }
+  if (["block", "block_confirm"].includes(action) && Number(ticket.user_id) === adminId) {
+    await telegram(env, "answerCallbackQuery", {
+      callback_query_id: query.id,
+      text: "The configured administrator cannot be blocked.",
+      show_alert: true,
+    });
+    return true;
+  }
+  if (action === "block") {
+    await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: "Confirm the block below." });
+    await telegram(env, "sendMessage", {
+      chat_id: supportChatId,
+      text: `⚠️ Block user ${ticket.user_id}?\nThey will lose access to the bot, support and the game.`,
+      reply_markup: {
+        inline_keyboard: [[
+          { text: `🚫 Confirm block #${ticketId}`, callback_data: `support:block_confirm:${ticketId}` },
+          { text: "Cancel", callback_data: `support:cancel:${ticketId}` },
+        ]],
+      },
+    });
+    return true;
+  }
+  if (action === "block_confirm") {
+    await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: `Blocking user ${ticket.user_id}…` });
+    await blockUserFromTicket(env, ticket, adminId);
+    await clearSupportButtons(env, query);
+    await telegram(env, "sendMessage", {
+      chat_id: supportChatId,
+      text: `🚫 User ${ticket.user_id} blocked from ticket #${ticketId}. Delete their row from blocked_users to restore access.`,
+    });
+    return true;
+  }
   if (action === "refund") {
     const { results } = await env.DB.prepare(
       `SELECT p.* FROM payments p LEFT JOIN refunds r
@@ -1193,7 +1269,7 @@ async function handleSupportCallback(env, query) {
     return true;
   }
   if (action === "cancel") {
-    await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: "Refund cancelled." });
+    await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: "Action cancelled." });
     await clearSupportButtons(env, query);
     return true;
   }
@@ -1256,7 +1332,10 @@ async function handleSupportCallback(env, query) {
 
 async function handleTelegramUpdate(env, update, origin) {
   if (update.pre_checkout_query) {
-    const [ok, error] = await validatePreCheckout(env, update.pre_checkout_query);
+    const blocked = await isUserBlocked(env, Number(update.pre_checkout_query.from?.id));
+    const [ok, error] = blocked
+      ? [false, "Access to TRAP is unavailable."]
+      : await validatePreCheckout(env, update.pre_checkout_query);
     await telegram(env, "answerPreCheckoutQuery", {
       pre_checkout_query_id: update.pre_checkout_query.id,
       ok,
@@ -1267,6 +1346,14 @@ async function handleTelegramUpdate(env, update, origin) {
   if (update.callback_query) {
     const query = update.callback_query;
     if (await handleSupportCallback(env, query)) return;
+    if (await isUserBlocked(env, Number(query.from?.id))) {
+      await telegram(env, "answerCallbackQuery", {
+        callback_query_id: query.id,
+        text: "Access to TRAP is unavailable.",
+        show_alert: true,
+      });
+      return;
+    }
     if (await handleUserMenuCallback(env, query)) return;
     if (query.game_short_name === (env.GAME_SHORT_NAME || "trap_game")) {
       const token = await createSession(env, query);
@@ -1281,9 +1368,10 @@ async function handleTelegramUpdate(env, update, origin) {
     return;
   }
   if (update.inline_query) {
+    const blocked = await isUserBlocked(env, Number(update.inline_query.from?.id));
     await telegram(env, "answerInlineQuery", {
       inline_query_id: update.inline_query.id,
-      results: [{ type: "game", id: "1", game_short_name: env.GAME_SHORT_NAME || "trap_game" }],
+      results: blocked ? [] : [{ type: "game", id: "1", game_short_name: env.GAME_SHORT_NAME || "trap_game" }],
       cache_time: 0,
     });
     return;
@@ -1299,6 +1387,7 @@ async function handleTelegramUpdate(env, update, origin) {
     return;
   }
   if (await handleSupportAdminReply(env, message)) return;
+  if (await isUserBlocked(env, Number(message.from?.id))) return;
   const chatId = message.chat.id;
   const userId = await ensurePlayer(env, message.from || { id: chatId, first_name: "Player" });
   const text = String(message.text || "").trim();
@@ -1346,6 +1435,7 @@ async function handleApi(request, env, url) {
     const validated = await validateMiniAppInitData(env, body.init_data);
     if (!validated) return json({ ok: false, error: "invalid Telegram Mini App data" }, 401);
     const userId = Number(validated.user.id);
+    if (await isUserBlocked(env, userId)) return json({ ok: false, error: "blocked" }, 403);
     const existed = await env.DB.prepare("SELECT 1 AS found FROM players WHERE user_id=?").bind(userId).first();
     const token = await createSessionForUser(env, validated.user, { chatId: Number(validated.user.id) });
     await registerAcquisition(env, userId, validated.startParam, !existed);
@@ -1356,6 +1446,7 @@ async function handleApi(request, env, url) {
   }
   const session = await getSession(env, requestToken(request, url, body));
   if (!session) return json({ ok: false, error: "invalid session" }, 401);
+  if (session.blocked_at != null) return json({ ok: false, error: "blocked" }, 403);
   const userId = Number(session.user_id);
 
   if (url.pathname === "/api/state" && request.method === "GET") {

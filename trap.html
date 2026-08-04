@@ -267,6 +267,7 @@ const MINI_APP_INIT_DATA=String(TELEGRAM_WEB_APP&&TELEGRAM_WEB_APP.initData||'')
 const IS_MINI_APP=Boolean(MINI_APP_INIT_DATA);
 const TELEGRAM_START_URL='https://t.me/trap_game_bot?startapp';
 let SESSION_VERIFIED=false;
+let ACCESS_BLOCKED=false;
 let STATE_READY_FOR_WRITES=false;
 const LOCAL_SAVE_KEY='trap_progress_v18';
 
@@ -1212,6 +1213,7 @@ async function initializeTelegramSession(){
       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({init_data:MINI_APP_INIT_DATA})
     });
     let data={}; try{data=await response.json();}catch(_){ }
+    if(response.status===403&&data.error==='blocked'){ ACCESS_BLOCKED=true; return false; }
     if(!response.ok||!data.token) return false;
     TG_SESSION=String(data.token); HAS_TELEGRAM_BACKEND=true;
     return true;
@@ -1223,7 +1225,10 @@ async function apiRequest(path,options={}){
   if(options.body&&!headers['Content-Type']) headers['Content-Type']='application/json';
   const response=await fetch(API_BASE+path,{...options,headers});
   let data={}; try{data=await response.json();}catch(_){ }
-  if(!response.ok){ const err=new Error(data.error||('HTTP '+response.status)); err.status=response.status; err.data=data; throw err; }
+  if(!response.ok){
+    if(response.status===403&&data.error==='blocked'){ ACCESS_BLOCKED=true; showBlockedGate(); }
+    const err=new Error(data.error||('HTTP '+response.status)); err.status=response.status; err.data=data; throw err;
+  }
   return data;
 }
 async function trackEvent(event,details={}){
@@ -1443,7 +1448,7 @@ async function initializeSave(){
   if(BETA_TEST_MODE){ SESSION_VERIFIED=true; STATE_READY_FOR_WRITES=true; ovB.disabled=false; return; }
   ovB.disabled=true; ovB.textContent='Loading save…';
   await initializeTelegramSession();
-  if(!HAS_TELEGRAM_BACKEND){ showTelegramGate(); return; }
+  if(!HAS_TELEGRAM_BACKEND){ ACCESS_BLOCKED?showBlockedGate():showTelegramGate(); return; }
   let savedProgress=null;
   const local=localLoad();
   if(local){ remotePaymentVersion=Number(local.payment_version)||0; savedProgress=local.progress; }
@@ -1452,8 +1457,9 @@ async function initializeSave(){
     SESSION_VERIFIED=true;
     remotePaymentVersion=Number(data.payment_version)||0;
     if(data.progress){ localSave(data.progress); savedProgress=data.progress; }
-  }catch(_){
+  }catch(error){
     TG_SESSION=''; HAS_TELEGRAM_BACKEND=false; SESSION_VERIFIED=false; STATE_READY_FOR_WRITES=false;
+    if(ACCESS_BLOCKED||(error&&error.status===403)){ showBlockedGate(); return; }
     showTelegramGate(); return;
   }
   if(savedProgress) showResume(savedProgress);
@@ -1467,6 +1473,15 @@ function showTelegramGate(){
   ovT.textContent='TELEGRAM ONLY';
   ovS.innerHTML='Open TRAP from <b style="color:var(--gold)">@trap_game_bot</b> to verify your session.';
   ovB.textContent='Open in Telegram'; ovB.dataset.act='telegram'; ovB.disabled=false;
+}
+function showBlockedGate(){
+  ACCESS_BLOCKED=true; state.running=false; SESSION_VERIFIED=false; STATE_READY_FOR_WRITES=false;
+  resumeProgress=null; resumeInfo.classList.remove('show');
+  setLifeStoreVisible(false); setBetaPickerVisible(false); ov.classList.remove('hidden');
+  setShareVisible(false);
+  ovT.textContent='ACCESS BLOCKED';
+  ovS.textContent='This Telegram account cannot access TRAP.';
+  ovB.textContent='Close'; ovB.dataset.act='blocked'; ovB.disabled=false;
 }
 function setLifeStoreVisible(visible){
   const show=Boolean(visible&&!BETA_TEST_MODE&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0);
@@ -2204,6 +2219,10 @@ function go(){
   if(state.running) return;
   keyboardKeys.l=keyboardKeys.r=false; padKeys.l=padKeys.r=false; syncMoveKeys(); p.buf=0;
   const act=ovB.dataset.act||'start';
+  if(act==='blocked'){
+    if(TELEGRAM_WEB_APP&&typeof TELEGRAM_WEB_APP.close==='function') TELEGRAM_WEB_APP.close();
+    return;
+  }
   if(act==='telegram'){
     location.assign(TELEGRAM_START_URL); return;
   }
@@ -2274,7 +2293,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v30-growth-referrals-share'
+    buildId:'v31-support-blocklist'
   };
 }
 })();
