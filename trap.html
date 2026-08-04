@@ -259,7 +259,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v34</div>
+<div id="versionTag">v35</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -1049,7 +1049,8 @@ const LEVELS=[
     spikeLine(20,21); spikeLine(39,40); spikeLine(60,61); spikeLine(83,84); spikeLine(102,103);
     platform(12,13,9); platform(31,33,10); platform(50,53,9); platform(71,73,9); platform(92,94,8); platform(111,113,10);
     for(let x=44;x<=46;x++) grid[7][x]=1; // v16: балка закінчується до монетки, стрибок більше не блокується
-    for(let x=97;x<=101;x++) grid[8][x]=6;
+    // Leave a one-tile opening beside L10e so it can be reached from the right.
+    for(let x=98;x<=101;x++) grid[8][x]=6;
     // boss arena
     for(let x=115;x<=133;x++) for(let y=GROUND_Y;y<FH;y++) grid[y][x]=1;
     for(let y=7;y<=10;y++) grid[y][132]=4;
