@@ -213,7 +213,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v21</div>
+<div id="versionTag">v22</div>
 
 <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
@@ -1320,10 +1320,20 @@ async function buyLifePack(stars){
   lifePackButtons.forEach(b=>b.disabled=true); storeStatus.textContent='Creating Telegram Stars invoice…';
   await persistSnapshot(serializeProgress('game_over'));
   try{
-    const data=await apiRequest('/api/invoice',{method:'POST',body:JSON.stringify({stars})});
-    openTelegramInvoiceLink(data.invoice_url);
+    const delivery=usesMobileTelegram()?'chat':'link';
+    const data=await apiRequest('/api/invoice',{method:'POST',body:JSON.stringify({stars,delivery})});
+    if(data.delivery==='chat'){
+      storeStatus.textContent='Invoice sent to the bot chat. Tap Back, pay it in Telegram, then reopen the game.';
+    }else{
+      openTelegramInvoiceLink(data.invoice_url);
+    }
   }catch(err){ storeStatus.textContent=err.message||'Could not create invoice.'; }
   finally{ lifePackButtons.forEach(b=>b.disabled=false); }
+}
+function usesMobileTelegram(){
+  const webApp=window.Telegram&&Telegram.WebApp;
+  const platform=String(webApp&&webApp.platform||'').toLowerCase();
+  return platform==='ios'||platform==='android'||/Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
 }
 function openTelegramInvoiceLink(url){
   storeStatus.textContent='Opening Telegram Stars invoice… Return here after payment.';
@@ -2001,7 +2011,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v21-visible-death-scores'
+    buildId:'v22-mobile-chat-invoices'
   };
 }
 })();

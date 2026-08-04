@@ -237,19 +237,24 @@ async function leaderboardForUser(env, userId) {
   };
 }
 
-async function createInvoice(env, userId, stars) {
+async function createInvoice(env, userId, stars, chatId, delivery = "link") {
   const lives = LIFE_PACKS[stars];
   if (!lives) return null;
   const payload = `life_${crypto.randomUUID()}`;
   await env.DB.prepare("INSERT INTO invoices(payload, user_id, stars, lives, created_at) VALUES (?, ?, ?, ?, ?)")
     .bind(payload, userId, stars, lives, now()).run();
-  return telegram(env, "createInvoiceLink", {
+  const invoice = {
     title: `${lives} life${lives === 1 ? "" : "s"} for TRAP`,
     description: `Continue from your saved checkpoint with ${lives} extra life${lives === 1 ? "" : "s"}.`,
     payload,
     currency: "XTR",
     prices: [{ label: `${lives} extra life${lives === 1 ? "" : "s"}`, amount: stars }],
-  });
+  };
+  if (delivery === "chat" && chatId != null) {
+    await telegram(env, "sendInvoice", { chat_id: Number(chatId), ...invoice });
+    return { delivery: "chat" };
+  }
+  return { delivery: "link", invoice_url: await telegram(env, "createInvoiceLink", invoice) };
 }
 
 async function validatePreCheckout(env, query) {
@@ -375,8 +380,9 @@ async function handleApi(request, env, url) {
   if (url.pathname === "/api/invoice" && request.method === "POST") {
     const stars = clampInt(body.stars, 0, 1000);
     if (!LIFE_PACKS[stars]) return json({ ok: false, error: "invalid life pack" }, 400);
-    const link = await createInvoice(env, userId, stars);
-    return json({ ok: true, invoice_url: link, stars, lives: LIFE_PACKS[stars] });
+    const requestedDelivery = body.delivery === "chat" ? "chat" : "link";
+    const invoice = await createInvoice(env, userId, stars, session.chat_id, requestedDelivery);
+    return json({ ok: true, ...invoice, stars, lives: LIFE_PACKS[stars] });
   }
   if (url.pathname === "/api/reset" && request.method === "POST") {
     const player = await getPlayer(env, userId);
