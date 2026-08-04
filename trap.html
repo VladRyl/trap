@@ -121,10 +121,17 @@
                      letter-spacing:.14em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
   .shareChallengeBtn.show{display:block}.shareChallengeBtn:active{transform:translateY(1px);background:#2a1a10}
   .shareChallengeBtn:disabled{opacity:.45;cursor:wait}
-  #shareRewardHint{display:none;max-width:390px;margin-top:-5px;color:var(--bone-dim);font-size:9px;line-height:1.45}
-  #shareRewardHint.show{display:block}
+  #shareRewardCard{display:none;width:min(420px,100%);padding:16px;border:1px solid rgba(183,35,39,.62);
+                   background:radial-gradient(circle at 50% 0,rgba(183,35,39,.18),transparent 58%),rgba(8,8,12,.9);
+                   box-shadow:0 12px 35px rgba(0,0,0,.48),inset 0 0 28px rgba(183,35,39,.06)}
+  #shareRewardCard.show{display:block}
+  #shareRewardTitle{color:var(--bone-dim);font-size:10px;font-weight:900;letter-spacing:.2em;text-transform:uppercase}
+  #shareRewardValue{margin:7px 0 6px;color:var(--blood-bright);font-family:"Arial Narrow",Impact,sans-serif;
+                    font-size:25px;font-weight:900;letter-spacing:.08em;text-shadow:0 2px 0 #35090d}
+  #shareRewardHint{color:var(--bone-dim);font-size:11px;line-height:1.5}
   #shareRewardHint strong{color:var(--gold)}
-  #shareStatus{display:none;max-width:360px;color:var(--bone-dim);font-size:9px;line-height:1.4}
+  #shareRewardCard .shareChallengeBtn{width:100%;margin-top:12px;padding:13px 18px;font-size:10px}
+  #shareStatus{display:none;margin-top:9px;color:var(--bone-dim);font-size:9px;line-height:1.4}
   #shareStatus.show{display:block}
   #scoresPanel{display:none;position:fixed;inset:0;z-index:70;align-items:center;justify-content:center;padding:18px;
                background:rgba(2,3,6,.94);touch-action:manipulation;pointer-events:auto}
@@ -218,9 +225,13 @@
     <label id="termsConsent"><input id="termsCheckbox" type="checkbox"><span>I have read and accept the TRAP Terms &amp; Refund Policy.</span></label>
     <div id="storeStatus"></div>
   </div>
-  <button id="shareChallenge" class="shareChallengeBtn" type="button">📤 Share &amp; earn +5 lives</button>
-  <div id="shareRewardHint">Invite a <strong>new player</strong>. When they clear Level 1, <strong>you both get +5 bonus lives</strong>.</div>
-  <div id="shareStatus"></div>
+  <div id="shareRewardCard" aria-hidden="true">
+    <div id="shareRewardTitle">OR YOU CAN SHARE</div>
+    <div id="shareRewardValue">+5 LIVES FOR BOTH</div>
+    <div id="shareRewardHint">Invite a <strong>new player</strong>. When they clear Level 1, you get <strong>+5 lives</strong> and they get <strong>+5 lives</strong>.</div>
+    <button id="shareChallenge" class="shareChallengeBtn" type="button">📤 Share challenge</button>
+    <div id="shareStatus"></div>
+  </div>
   <button id="scoreMenuBtn" class="scoreControl scoreMenuBtn" type="button">🏆 Scores</button>
   <button id="ovBtn" type="button"
     onclick="window.__trapStart&&window.__trapStart(event)"
@@ -245,7 +256,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v31</div>
+<div id="versionTag">v32</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -294,8 +305,8 @@ const cnum=document.getElementById('cnum'), creq=document.getElementById('creq')
       cbox=document.getElementById('coins');
 const ov=document.getElementById('overlay'), ovT=document.getElementById('ovTitle'),
       ovS=document.getElementById('ovSub'), ovB=document.getElementById('ovBtn');
+const shareRewardCard=document.getElementById('shareRewardCard');
 const shareChallengeButton=document.getElementById('shareChallenge');
-const shareRewardHint=document.getElementById('shareRewardHint');
 const shareStatus=document.getElementById('shareStatus');
 const betaLevelPicker=document.getElementById('betaLevelPicker');
 const betaLevelSelect=document.getElementById('betaLevelSelect');
@@ -1247,8 +1258,9 @@ function escapeHtml(value){
 }
 function setShareVisible(visible,context='',level=LI+1,deaths=state.deaths){
   overlayShareResult=visible?{context,level:Number(level)||1,deaths:Number(deaths)||0}:null;
+  shareRewardCard.classList.toggle('show',Boolean(visible));
+  shareRewardCard.setAttribute('aria-hidden',visible?'false':'true');
   shareChallengeButton.classList.toggle('show',Boolean(visible));
-  shareRewardHint.classList.toggle('show',Boolean(visible));
   shareChallengeButton.disabled=false;
   shareStatus.textContent=''; shareStatus.classList.remove('show');
 }
@@ -2263,7 +2275,7 @@ function go(){
 let overlayActivationAt=-1000;
 function activateOverlay(e){
   if(ov.classList.contains('hidden')||state.running||ovB.disabled) return;
-  if(e&&e.target&&e.target.closest&&(e.target.closest('#betaLevelPicker')||e.target.closest('#lifeStore')||e.target.closest('.scoreControl')||e.target.closest('.shareChallengeBtn')||e.target.closest('#scoresPanel'))) return;
+  if(e&&e.target&&e.target.closest&&(e.target.closest('#betaLevelPicker')||e.target.closest('#lifeStore')||e.target.closest('#shareRewardCard')||e.target.closest('.scoreControl')||e.target.closest('.shareChallengeBtn')||e.target.closest('#scoresPanel'))) return;
   const now=performance.now();
   if(now-overlayActivationAt<180) return;
   overlayActivationAt=now;
