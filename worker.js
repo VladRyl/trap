@@ -247,7 +247,6 @@ async function createInvoice(env, userId, stars) {
     title: `${lives} life${lives === 1 ? "" : "s"} for TRAP`,
     description: `Continue from your saved checkpoint with ${lives} extra life${lives === 1 ? "" : "s"}.`,
     payload,
-    provider_token: "",
     currency: "XTR",
     prices: [{ label: `${lives} extra life${lives === 1 ? "" : "s"}`, amount: stars }],
   });

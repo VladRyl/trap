@@ -13,6 +13,7 @@
     {
       "binding": "DB",
       "database_name": "trap-game-db",
+      "database_id": "2f58ffaf-efd5-4c67-bebc-d22c4235704f",
       "migrations_dir": "migrations"
     }
   ],
