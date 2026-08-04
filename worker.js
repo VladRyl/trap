@@ -452,6 +452,23 @@ function commandName(message) {
   return first.replace(/@[^\s]+$/, "");
 }
 
+function supportPlayerLabel(user) {
+  const username = String(user?.username || "").trim();
+  return `Player: ${displayName(user || {})} (${username ? `@${username}` : "no username"}):`;
+}
+
+function labeledSupportText(message, limit) {
+  const label = supportPlayerLabel(message.from);
+  const body = String(message.text || message.caption || "").trim();
+  const text = body ? `${label}\n${body}` : label;
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 1))}…`;
+}
+
+function supportsCopiedCaption(message) {
+  return Boolean(message.animation || message.audio || message.document || message.photo || message.video || message.voice);
+}
+
 async function supportTicketForUser(env, userId) {
   return env.DB.prepare(
     "SELECT * FROM support_tickets WHERE user_id=? AND status='open' ORDER BY id DESC LIMIT 1",
@@ -504,15 +521,37 @@ async function relaySupportMessage(env, message, ticket) {
   const supportChatId = configuredId(env.SUPPORT_CHAT_ID, true);
   if (!supportChatId) return false;
   try {
-    const copied = await telegram(env, "copyMessage", {
-      chat_id: supportChatId,
-      from_chat_id: message.chat.id,
-      message_id: message.message_id,
-    });
+    const relayedMessageIds = [];
+    if (message.text) {
+      const relayed = await telegram(env, "sendMessage", {
+        chat_id: supportChatId,
+        text: labeledSupportText(message, 4096),
+      });
+      relayedMessageIds.push(relayed.message_id);
+    } else if (supportsCopiedCaption(message)) {
+      const copied = await telegram(env, "copyMessage", {
+        chat_id: supportChatId,
+        from_chat_id: message.chat.id,
+        message_id: message.message_id,
+        caption: labeledSupportText(message, 1024),
+      });
+      relayedMessageIds.push(copied.message_id);
+    } else {
+      const label = await telegram(env, "sendMessage", {
+        chat_id: supportChatId,
+        text: supportPlayerLabel(message.from),
+      });
+      const copied = await telegram(env, "copyMessage", {
+        chat_id: supportChatId,
+        from_chat_id: message.chat.id,
+        message_id: message.message_id,
+      });
+      relayedMessageIds.push(label.message_id, copied.message_id);
+    }
     await env.DB.batch([
-      env.DB.prepare(
+      ...relayedMessageIds.map((adminMessageId) => env.DB.prepare(
         "INSERT OR REPLACE INTO support_messages(admin_message_id, ticket_id, user_message_id, created_at) VALUES (?, ?, ?, ?)",
-      ).bind(copied.message_id, ticket.id, message.message_id, now()),
+      ).bind(adminMessageId, ticket.id, message.message_id, now())),
       env.DB.prepare("UPDATE support_tickets SET updated_at=? WHERE id=?").bind(now(), ticket.id),
     ]);
     await telegram(env, "sendMessage", { chat_id: message.chat.id, text: `✅ Sent to support · ticket #${ticket.id}` });
