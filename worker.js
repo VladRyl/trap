@@ -436,7 +436,14 @@ async function sendPlayButton(env, chatId, origin, text = "TRAP is ready.") {
     chat_id: chatId,
     text,
     reply_markup: {
-      inline_keyboard: [[{ text: "▶ PLAY", web_app: { url: gameUrl.toString() } }]],
+      inline_keyboard: [
+        [{ text: "▶ PLAY", web_app: { url: gameUrl.toString() } }],
+        [
+          { text: "📜 Terms", callback_data: "menu:terms" },
+          { text: "🛟 Support", callback_data: "menu:support" },
+        ],
+        [{ text: "⭐ Payments & refunds", callback_data: "menu:paysupport" }],
+      ],
     },
   });
 }
@@ -528,6 +535,7 @@ async function startSupportTicket(env, message, kind) {
   const userId = Number(message.from.id);
   let ticket = await supportTicketForUser(env, userId);
   let created = false;
+  let upgraded = false;
   if (!ticket) {
     const result = await env.DB.prepare(
       `INSERT INTO support_tickets(user_id, user_chat_id, kind, status, created_at, updated_at)
@@ -539,12 +547,13 @@ async function startSupportTicket(env, message, kind) {
     await env.DB.prepare("UPDATE support_tickets SET kind='payment', updated_at=? WHERE id=?")
       .bind(now(), ticket.id).run();
     ticket.kind = "payment";
+    upgraded = true;
   }
-  if (created) {
+  if (created || upgraded) {
     const username = message.from.username ? `@${message.from.username}` : "no username";
     const header = await telegram(env, "sendMessage", {
       chat_id: supportChatId,
-      text: `🛟 ${kind === "payment" ? "PAYMENT" : "GENERAL"} TICKET #${ticket.id}\n` +
+      text: `🛟 ${ticket.kind === "payment" ? "PAYMENT" : "GENERAL"} TICKET #${ticket.id}${upgraded ? " · UPGRADED" : ""}\n` +
         `Player: ${displayName(message.from)} (${username})\nUser ID: ${userId}\n\n` +
         "Reply to a relayed message to answer anonymously. Use the ticket buttons below to manage it.",
       reply_markup: supportTicketKeyboard(ticket),
@@ -555,7 +564,10 @@ async function startSupportTicket(env, message, kind) {
   }
   await telegram(env, "sendMessage", {
     chat_id: message.chat.id,
-    text: `${kind === "payment" ? "Payment support" : "Support"} ticket #${ticket.id} is open. Send your message, photo or receipt here. It will be forwarded privately. Use /done when finished.`,
+    text: `${ticket.kind === "payment" ? "Payment support" : "Support"} ticket #${ticket.id} is open. Send your message, photo or receipt here. It will be forwarded privately.`,
+    reply_markup: {
+      inline_keyboard: [[{ text: "✅ Finish support", callback_data: `menu:done:${ticket.id}` }]],
+    },
   });
 }
 
@@ -616,6 +628,53 @@ async function closeSupportTicket(env, ticket, notifyUser = true) {
       text: `Support ticket #${ticket.id} is closed. Use /support or /paysupport to open a new one.`,
     });
   }
+}
+
+async function handleUserMenuCallback(env, query) {
+  const match = /^menu:(terms|support|paysupport)$/.exec(String(query.data || ""));
+  const done = /^menu:done:(\d+)$/.exec(String(query.data || ""));
+  if (!match && !done) return false;
+  const chatId = Number(query.message?.chat?.id);
+  const userId = Number(query.from?.id);
+  if (!Number.isSafeInteger(chatId) || !Number.isSafeInteger(userId) || chatId !== userId) {
+    await telegram(env, "answerCallbackQuery", {
+      callback_query_id: query.id,
+      text: "Open the bot in a private chat to use this button.",
+      show_alert: true,
+    });
+    return true;
+  }
+  await ensurePlayer(env, query.from);
+  if (done) {
+    const ticket = await env.DB.prepare(
+      "SELECT * FROM support_tickets WHERE id=? AND user_id=? AND status='open' LIMIT 1",
+    ).bind(done[1], userId).first();
+    if (!ticket) {
+      await telegram(env, "answerCallbackQuery", {
+        callback_query_id: query.id,
+        text: "This support ticket is already closed.",
+        show_alert: true,
+      });
+      await clearSupportButtons(env, query);
+      return true;
+    }
+    await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: `Closing ticket #${ticket.id}…` });
+    await closeSupportTicket(env, ticket, true);
+    await clearSupportButtons(env, query);
+    return true;
+  }
+  const action = match[1];
+  if (action === "terms") {
+    await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: "Terms opened." });
+    await telegram(env, "sendMessage", { chat_id: chatId, text: TERMS_TEXT });
+    return true;
+  }
+  await telegram(env, "answerCallbackQuery", {
+    callback_query_id: query.id,
+    text: action === "paysupport" ? "Opening payment support…" : "Opening support…",
+  });
+  await startSupportTicket(env, { chat: query.message.chat, from: query.from }, action === "paysupport" ? "payment" : "support");
+  return true;
 }
 
 async function finalizeRefund(env, payment, requestedBy, reason = "") {
@@ -919,6 +978,7 @@ async function handleTelegramUpdate(env, update, origin) {
   if (update.callback_query) {
     const query = update.callback_query;
     if (await handleSupportCallback(env, query)) return;
+    if (await handleUserMenuCallback(env, query)) return;
     if (query.game_short_name === (env.GAME_SHORT_NAME || "trap_game")) {
       const token = await createSession(env, query);
       const gameUrl = new URL("/game", env.PUBLIC_BASE_URL || origin);

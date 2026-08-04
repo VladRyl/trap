@@ -12,8 +12,9 @@ Send `/myid` to the bot to get both your user ID and current chat ID. For a priv
 Player flow:
 
 1. `/support` opens a general ticket; `/paysupport` opens a payment ticket.
-2. The next text, photo or document is copied into the support chat.
-3. The player uses `/done` to close the ticket.
+2. The PLAY message exposes the same actions as inline **Terms**, **Support**, and **Payments & refunds** buttons.
+3. The next text, photo or document is copied into the support chat.
+4. The player uses the ticket-bound **Finish support** button or `/done` to close the ticket. A stale button cannot close a newer ticket.
 
 Admin flow:
 
