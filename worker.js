@@ -213,7 +213,7 @@ async function createSessionForUser(env, user, details = {}) {
   const userId = await ensurePlayer(env, user);
   const token = `${crypto.randomUUID()}${crypto.randomUUID().replaceAll("-", "")}`;
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now()),
+    env.DB.prepare("DELETE FROM sessions WHERE user_id=? OR expires_at < ?").bind(userId, now()),
     env.DB.prepare(
       `INSERT INTO sessions(token, user_id, chat_id, message_id, inline_message_id, expires_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,

@@ -213,7 +213,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v24</div>
+<div id="versionTag">v25</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -237,6 +237,7 @@ const MINI_APP_INIT_DATA=String(TELEGRAM_WEB_APP&&TELEGRAM_WEB_APP.initData||'')
 const IS_MINI_APP=Boolean(MINI_APP_INIT_DATA);
 const TELEGRAM_START_URL='https://t.me/trap_game_bot?startapp';
 let SESSION_VERIFIED=false;
+let STATE_READY_FOR_WRITES=false;
 const LOCAL_SAVE_KEY='trap_progress_v18';
 
 if(TELEGRAM_WEB_APP){
@@ -1247,7 +1248,7 @@ scoresPanel.addEventListener('touchstart',e=>e.stopPropagation(),{passive:false}
 addEventListener('keydown',e=>{if(e.key==='Escape'&&scoresPanel.classList.contains('show'))closeScores(e);});
 
 async function persistSnapshot(progress,keepalive=false){
-  if(BETA_TEST_MODE) return;
+  if(BETA_TEST_MODE||!SESSION_VERIFIED||!STATE_READY_FOR_WRITES) return;
   localSave(progress);
   if(!HAS_TELEGRAM_BACKEND||saveInFlight) return;
   saveInFlight=true;
@@ -1262,14 +1263,14 @@ async function persistSnapshot(progress,keepalive=false){
   }finally{ saveInFlight=false; }
 }
 function queueSave(screen='playing',immediate=false){
-  if(BETA_TEST_MODE) return;
+  if(BETA_TEST_MODE||!SESSION_VERIFIED||!STATE_READY_FOR_WRITES) return;
   clearTimeout(saveTimer);
   const snapshot=serializeProgress(screen);
   if(immediate) persistSnapshot(snapshot,true);
   else saveTimer=setTimeout(()=>persistSnapshot(snapshot),180);
 }
 async function submitScore(level=LI+1){
-  if(BETA_TEST_MODE||!HAS_TELEGRAM_BACKEND) return;
+  if(BETA_TEST_MODE||!SESSION_VERIFIED||!STATE_READY_FOR_WRITES||!HAS_TELEGRAM_BACKEND) return;
   try{ await apiRequest('/api/score',{method:'POST',body:JSON.stringify({level,deaths:state.deaths})}); }catch(_){ }
 }
 function applyProgress(progress){
@@ -1287,6 +1288,7 @@ function applyProgress(progress){
   state.revealed=new Set(); state.gameOverPending=false; state.won=false;
   dnum.textContent=state.deaths; cnum.textContent=state.coins; creq.textContent=state.reqKnown?('/'+state.req):'/?'; updateLives();
   resetLife();
+  STATE_READY_FOR_WRITES=true;
   return true;
 }
 function showResume(progress){
@@ -1305,7 +1307,8 @@ function showResume(progress){
   ovB.textContent='Continue Level '+level; ovB.dataset.act='resume';
 }
 async function initializeSave(){
-  if(BETA_TEST_MODE){ SESSION_VERIFIED=true; ovB.disabled=false; return; }
+  STATE_READY_FOR_WRITES=false;
+  if(BETA_TEST_MODE){ SESSION_VERIFIED=true; STATE_READY_FOR_WRITES=true; ovB.disabled=false; return; }
   ovB.disabled=true; ovB.textContent='Loading save…';
   await initializeTelegramSession();
   if(!HAS_TELEGRAM_BACKEND){ showTelegramGate(); return; }
@@ -1318,7 +1321,7 @@ async function initializeSave(){
     remotePaymentVersion=Number(data.payment_version)||0;
     if(data.progress){ localSave(data.progress); savedProgress=data.progress; }
   }catch(_){
-    TG_SESSION=''; HAS_TELEGRAM_BACKEND=false; SESSION_VERIFIED=false;
+    TG_SESSION=''; HAS_TELEGRAM_BACKEND=false; SESSION_VERIFIED=false; STATE_READY_FOR_WRITES=false;
     showTelegramGate(); return;
   }
   if(savedProgress) showResume(savedProgress);
@@ -1326,7 +1329,7 @@ async function initializeSave(){
   ovB.disabled=false;
 }
 function showTelegramGate(){
-  state.running=false; resumeProgress=null; resumeInfo.classList.remove('show');
+  state.running=false; STATE_READY_FOR_WRITES=false; resumeProgress=null; resumeInfo.classList.remove('show');
   setLifeStoreVisible(false); setBetaPickerVisible(false); ov.classList.remove('hidden');
   ovT.textContent='TELEGRAM ONLY';
   ovS.innerHTML='Open TRAP from <b style="color:var(--gold)">@trap_game_bot</b> to verify your session.';
@@ -2028,13 +2031,13 @@ function go(){
   }
   if(!SESSION_VERIFIED&&!BETA_TEST_MODE){ showTelegramGate(); return; }
   if(act==='next'){
-    loadLevel(LI+1); queueSave('level_start',true); submitScore(LI+1);
+    loadLevel(LI+1); STATE_READY_FOR_WRITES=true; queueSave('level_start',true); submitScore(LI+1);
   }else if(act==='resume'&&resumeProgress&&!BETA_TEST_MODE){
     applyProgress(resumeProgress); resumeProgress=null; resumeInfo.classList.remove('show');
   }else{
     resetRun();
     const selectedLevel=BETA_TEST_MODE?Math.max(0,Math.min(LEVELS.length-1,Number(betaLevelSelect.value)||0)):0;
-    loadLevel(selectedLevel); queueSave('level_start',true); submitScore(selectedLevel+1);
+    loadLevel(selectedLevel); STATE_READY_FOR_WRITES=true; queueSave('level_start',true); submitScore(selectedLevel+1);
   }
   setLifeStoreVisible(false); setBetaPickerVisible(false);
   ovB.dataset.act='restart';
@@ -2078,7 +2081,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v24-telegram-session-gate'
+    buildId:'v25-session-state-race-fix'
   };
 }
 })();
