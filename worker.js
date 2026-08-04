@@ -1248,9 +1248,21 @@ async function handleSupportCallback(env, query) {
     await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: `Blocking user ${ticket.user_id}…` });
     await blockUserFromTicket(env, ticket, adminId);
     await clearSupportButtons(env, query);
+    let notificationDelivered = true;
+    try {
+      await telegram(env, "sendMessage", {
+        chat_id: Number(ticket.user_chat_id),
+        text: "🚫 Your access to TRAP has been blocked. You can no longer use the bot, support, payments or the game.",
+      });
+    } catch (error) {
+      notificationDelivered = false;
+      console.error("Could not notify a blocked user", error);
+    }
     await telegram(env, "sendMessage", {
       chat_id: supportChatId,
-      text: `🚫 User ${ticket.user_id} blocked from ticket #${ticketId}. Delete their row from blocked_users to restore access.`,
+      text: `🚫 User ${ticket.user_id} blocked from ticket #${ticketId}. ` +
+        `${notificationDelivered ? "The player was notified." : "The notification could not be delivered."}\n` +
+        "Delete their row from blocked_users to restore access.",
     });
     return true;
   }
