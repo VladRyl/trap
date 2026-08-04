@@ -106,6 +106,12 @@
   .lifePack strong{display:block;color:var(--blood-bright);font-size:18px;margin-bottom:4px}
   .lifePack span{display:block;color:var(--gold);font-size:11px;letter-spacing:.08em}
   .lifePack:disabled{opacity:.45}
+  #termsBox{margin-top:11px;padding:9px 10px;border:1px solid #45363b;background:rgba(12,10,14,.78);
+            color:var(--bone-dim);font-size:9px;line-height:1.45;text-align:left}
+  #termsBox summary{color:var(--gold);font-weight:800;letter-spacing:.08em;cursor:pointer}
+  #termsText{margin:8px 0 0;white-space:pre-line;max-height:120px;overflow:auto}
+  #termsConsent{display:flex;align-items:flex-start;gap:8px;margin-top:9px;color:var(--bone);font-size:10px;line-height:1.4;cursor:pointer}
+  #termsConsent input{flex:0 0 auto;width:16px;height:16px;margin:0;accent-color:var(--blood-bright)}
   #storeStatus{min-height:18px;margin-top:9px;color:var(--bone-dim);font-size:10px}
   .scoreMenuBtn{appearance:none;padding:10px 18px;border:1px solid #564249;background:#0d0d12;color:var(--gold);
                 font-size:9px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
@@ -192,6 +198,11 @@
       <button class="lifePack" type="button" data-stars="50"><strong>+7 LIVES</strong><span>50 ⭐</span></button>
       <button class="lifePack" type="button" data-stars="100"><strong>+15 LIVES</strong><span>100 ⭐</span></button>
     </div>
+    <details id="termsBox">
+      <summary>TERMS &amp; REFUND POLICY</summary>
+      <div id="termsText">Life packs are digital goods paid in Telegram Stars. Unused paid lives stay on your Telegram account. During the launch period you may request a full refund via /paysupport; a refund can remove unused paid lives. Payment and refund records are retained for delivery, support and fraud prevention.</div>
+    </details>
+    <label id="termsConsent"><input id="termsCheckbox" type="checkbox"><span>I have read and accept the TRAP Terms &amp; Refund Policy.</span></label>
     <div id="storeStatus"></div>
   </div>
   <button id="scoreMenuBtn" class="scoreControl scoreMenuBtn" type="button">🏆 Scores</button>
@@ -215,7 +226,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v28</div>
+<div id="versionTag">v29</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -269,6 +280,8 @@ const resumeInfo=document.getElementById('resumeInfo');
 const lifeStore=document.getElementById('lifeStore');
 const storeStatus=document.getElementById('storeStatus');
 const lifePackButtons=[...document.querySelectorAll('.lifePack')];
+const termsCheckbox=document.getElementById('termsCheckbox');
+const termsText=document.getElementById('termsText');
 const scoreOpenButtons=[...document.querySelectorAll('.scoreControl')];
 const scoresPanel=document.getElementById('scoresPanel');
 const scoresClose=document.getElementById('scoresClose');
@@ -279,6 +292,8 @@ const myScore=document.getElementById('myScore');
 let scoresWasRunning=false;
 let resumeProgress=null;
 let remotePaymentVersion=0;
+let termsAccepted=false;
+let termsLoaded=false;
 let saveTimer=0;
 let saveInFlight=false;
 function setBetaPickerVisible(visible){
@@ -1363,6 +1378,29 @@ function showTelegramGate(){
 function setLifeStoreVisible(visible){
   const show=Boolean(visible&&!BETA_TEST_MODE&&state.lives<=0&&state.paidLives<=0);
   lifeStore.classList.toggle('show',show); lifeStore.setAttribute('aria-hidden',show?'false':'true');
+  if(show) loadTerms();
+}
+async function loadTerms(){
+  if(termsLoaded||!HAS_TELEGRAM_BACKEND) return;
+  termsLoaded=true;
+  try{
+    const data=await apiRequest('/api/terms');
+    termsAccepted=Boolean(data.accepted);
+    if(data.text) termsText.textContent=data.text;
+    if(termsAccepted){
+      termsCheckbox.checked=true; termsCheckbox.disabled=true;
+      termsCheckbox.nextElementSibling.textContent='TRAP Terms & Refund Policy accepted.';
+    }
+  }catch(_){ termsLoaded=false; }
+}
+async function ensureTermsAccepted(){
+  if(termsAccepted) return;
+  if(!termsCheckbox.checked) throw new Error('Read and accept the Terms & Refund Policy before purchasing.');
+  const data=await apiRequest('/api/terms/accept',{method:'POST',body:'{}'});
+  termsAccepted=Boolean(data.accepted);
+  if(!termsAccepted) throw new Error('Could not record terms acceptance.');
+  termsCheckbox.disabled=true;
+  termsCheckbox.nextElementSibling.textContent='TRAP Terms & Refund Policy accepted.';
 }
 async function refreshRemoteState(resume=false){
   if(!HAS_TELEGRAM_BACKEND) return;
@@ -1380,6 +1418,8 @@ function resumeAfterPayment(progress){
 async function buyLifePack(stars){
   if(!HAS_TELEGRAM_BACKEND){ storeStatus.textContent='Open the game from the Telegram bot to buy lives.'; return; }
   if(state.lives>0||state.paidLives>0){ storeStatus.textContent='Life packs unlock only when no lives or paid reserve remain.'; return; }
+  try{ await ensureTermsAccepted(); }
+  catch(err){ storeStatus.textContent=err.message||'Accept the terms before purchasing.'; return; }
   lifePackButtons.forEach(b=>b.disabled=true); storeStatus.textContent='Creating Telegram Stars invoice…';
   await persistSnapshot(serializeProgress('game_over'));
   try{
@@ -2119,7 +2159,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v28-separate-life-balances'
+    buildId:'v29-support-refunds-terms'
   };
 }
 })();

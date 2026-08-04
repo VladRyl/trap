@@ -4,6 +4,17 @@ const SESSION_TTL = 60 * 60 * 24 * 30;
 const MINI_APP_AUTH_MAX_AGE = 60 * 60 * 24;
 const LIFE_PACKS = { 10: 1, 50: 7, 100: 15 };
 const LIFE_BALANCE_VERSION = 2;
+const TERMS_VERSION = 1;
+const TERMS_TEXT = `TRAP TERMS & REFUND POLICY (version 1)
+
+1. TRAP is a digital game. Life packs are digital goods sold only for Telegram Stars.
+2. Purchased lives are credited after Telegram confirms a successful payment. Unused purchased lives remain attached to your Telegram account.
+3. Launch-period refund policy: you may request a full refund through /paysupport. Refunds are processed by the bot operator. Telegram is not responsible for support or refunds.
+4. When a purchase is refunded, any unused lives from that purchase may be removed from your paid-life reserve. A refund can also be granted after lives were used, at the operator's discretion.
+5. Game progress, support messages, payment identifiers and refund records are stored against your Telegram user ID to operate the game, prevent duplicate delivery and provide support.
+6. The service is provided as-is. Availability and game balance may change.
+
+By purchasing a life pack, you confirm that you accept these terms. For general help use /support. For payment or refund help use /paysupport.`;
 let schemaReady;
 
 const SCHEMA = [
@@ -46,6 +57,43 @@ const SCHEMA = [
     lives INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     FOREIGN KEY(user_id) REFERENCES players(user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS terms_acceptances (
+    user_id INTEGER PRIMARY KEY,
+    version INTEGER NOT NULL,
+    accepted_at INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES players(user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS support_tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    user_chat_id INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('support', 'payment')),
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES players(user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_support_tickets_user_status ON support_tickets(user_id, status, id)`,
+  `CREATE TABLE IF NOT EXISTS support_messages (
+    admin_message_id INTEGER PRIMARY KEY,
+    ticket_id INTEGER NOT NULL,
+    user_message_id INTEGER,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(ticket_id) REFERENCES support_tickets(id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS refunds (
+    telegram_charge_id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    stars INTEGER NOT NULL,
+    lives INTEGER NOT NULL,
+    requested_by INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    requested_at INTEGER NOT NULL,
+    completed_at INTEGER,
+    error TEXT,
+    FOREIGN KEY(telegram_charge_id) REFERENCES payments(telegram_charge_id)
   )`,
 ];
 
@@ -334,11 +382,24 @@ async function createInvoice(env, userId, stars, chatId, delivery = "link") {
   return { delivery: "link", invoice_url: await telegram(env, "createInvoiceLink", invoice) };
 }
 
+async function hasAcceptedTerms(env, userId) {
+  const row = await env.DB.prepare("SELECT version FROM terms_acceptances WHERE user_id=?").bind(userId).first();
+  return Number(row?.version || 0) >= TERMS_VERSION;
+}
+
+async function acceptTerms(env, userId) {
+  await env.DB.prepare(
+    `INSERT INTO terms_acceptances(user_id, version, accepted_at) VALUES (?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET version=excluded.version, accepted_at=excluded.accepted_at`,
+  ).bind(userId, TERMS_VERSION, now()).run();
+}
+
 async function validatePreCheckout(env, query) {
   const invoice = await env.DB.prepare("SELECT * FROM invoices WHERE payload=?").bind(query.invoice_payload || "").first();
   if (!invoice || Number(invoice.consumed)) return [false, "This life pack is no longer available. Please create a new one."];
   if (Number(invoice.user_id) !== Number(query.from?.id)) return [false, "This invoice belongs to another player."];
   if (query.currency !== "XTR" || Number(query.total_amount) !== Number(invoice.stars)) return [false, "The invoice amount is invalid."];
+  if (!(await hasAcceptedTerms(env, Number(invoice.user_id)))) return [false, "Please accept the TRAP terms in the game before purchasing."];
   return [true, undefined];
 }
 
@@ -380,6 +441,214 @@ async function sendPlayButton(env, chatId, origin, text = "TRAP is ready.") {
   });
 }
 
+function configuredId(value, allowNegative = false) {
+  const id = Number.parseInt(String(value || ""), 10);
+  if (!Number.isSafeInteger(id) || id === 0 || (!allowNegative && id < 0)) return null;
+  return id;
+}
+
+function commandName(message) {
+  const first = String(message.text || "").trim().split(/\s+/, 1)[0].toLowerCase();
+  return first.replace(/@[^\s]+$/, "");
+}
+
+async function supportTicketForUser(env, userId) {
+  return env.DB.prepare(
+    "SELECT * FROM support_tickets WHERE user_id=? AND status='open' ORDER BY id DESC LIMIT 1",
+  ).bind(userId).first();
+}
+
+async function startSupportTicket(env, message, kind) {
+  const supportChatId = configuredId(env.SUPPORT_CHAT_ID, true);
+  if (!supportChatId) {
+    await telegram(env, "sendMessage", {
+      chat_id: message.chat.id,
+      text: "Support is not configured yet. Please try again later.",
+    });
+    return;
+  }
+  const userId = Number(message.from.id);
+  let ticket = await supportTicketForUser(env, userId);
+  let created = false;
+  if (!ticket) {
+    const result = await env.DB.prepare(
+      `INSERT INTO support_tickets(user_id, user_chat_id, kind, status, created_at, updated_at)
+       VALUES (?, ?, ?, 'open', ?, ?)`,
+    ).bind(userId, Number(message.chat.id), kind, now(), now()).run();
+    ticket = await env.DB.prepare("SELECT * FROM support_tickets WHERE id=?").bind(result.meta.last_row_id).first();
+    created = true;
+  } else if (kind === "payment" && ticket.kind !== "payment") {
+    await env.DB.prepare("UPDATE support_tickets SET kind='payment', updated_at=? WHERE id=?")
+      .bind(now(), ticket.id).run();
+    ticket.kind = "payment";
+  }
+  if (created) {
+    const username = message.from.username ? `@${message.from.username}` : "no username";
+    const header = await telegram(env, "sendMessage", {
+      chat_id: supportChatId,
+      text: `🛟 ${kind === "payment" ? "PAYMENT" : "GENERAL"} TICKET #${ticket.id}\n` +
+        `Player: ${displayName(message.from)} (${username})\nUser ID: ${userId}\n\n` +
+        "Reply to a relayed message to answer anonymously. Reply /refund to refund the latest purchase, or /close to close the ticket.",
+    });
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO support_messages(admin_message_id, ticket_id, user_message_id, created_at) VALUES (?, ?, NULL, ?)",
+    ).bind(header.message_id, ticket.id, now()).run();
+  }
+  await telegram(env, "sendMessage", {
+    chat_id: message.chat.id,
+    text: `${kind === "payment" ? "Payment support" : "Support"} ticket #${ticket.id} is open. Send your message, photo or receipt here. It will be forwarded privately. Use /done when finished.`,
+  });
+}
+
+async function relaySupportMessage(env, message, ticket) {
+  const supportChatId = configuredId(env.SUPPORT_CHAT_ID, true);
+  if (!supportChatId) return false;
+  try {
+    const copied = await telegram(env, "copyMessage", {
+      chat_id: supportChatId,
+      from_chat_id: message.chat.id,
+      message_id: message.message_id,
+    });
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT OR REPLACE INTO support_messages(admin_message_id, ticket_id, user_message_id, created_at) VALUES (?, ?, ?, ?)",
+      ).bind(copied.message_id, ticket.id, message.message_id, now()),
+      env.DB.prepare("UPDATE support_tickets SET updated_at=? WHERE id=?").bind(now(), ticket.id),
+    ]);
+    await telegram(env, "sendMessage", { chat_id: message.chat.id, text: `✅ Sent to support · ticket #${ticket.id}` });
+  } catch (error) {
+    await telegram(env, "sendMessage", {
+      chat_id: message.chat.id,
+      text: "I could not forward that message. Please send it as text, photo or document.",
+    });
+    console.error(error);
+  }
+  return true;
+}
+
+async function closeSupportTicket(env, ticket, notifyUser = true) {
+  await env.DB.prepare("UPDATE support_tickets SET status='closed', updated_at=? WHERE id=?")
+    .bind(now(), ticket.id).run();
+  if (notifyUser) {
+    await telegram(env, "sendMessage", {
+      chat_id: Number(ticket.user_chat_id),
+      text: `Support ticket #${ticket.id} is closed. Use /support or /paysupport to open a new one.`,
+    });
+  }
+}
+
+async function finalizeRefund(env, payment, requestedBy, reason = "") {
+  const existing = await env.DB.prepare("SELECT status FROM refunds WHERE telegram_charge_id=?")
+    .bind(payment.telegram_charge_id).first();
+  if (existing?.status === "completed") return { alreadyCompleted: true, removedLives: 0 };
+  const player = await getPlayer(env, Number(payment.user_id));
+  const progress = player?.progress || defaultProgress();
+  const removedLives = Math.min(progress.paidLives, Number(payment.lives));
+  progress.paidLives -= removedLives;
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO refunds(telegram_charge_id, user_id, stars, lives, requested_by, status, reason, requested_at, completed_at, error)
+       VALUES (?, ?, ?, ?, ?, 'completed', ?, ?, ?, NULL)
+       ON CONFLICT(telegram_charge_id) DO UPDATE SET status='completed', reason=excluded.reason,
+         completed_at=excluded.completed_at, error=NULL`,
+    ).bind(payment.telegram_charge_id, payment.user_id, payment.stars, payment.lives, requestedBy, reason, now(), now()),
+    env.DB.prepare("UPDATE players SET progress_json=?, payment_version=payment_version+1, updated_at=? WHERE user_id=?")
+      .bind(JSON.stringify(progress), now(), payment.user_id),
+  ]);
+  return { alreadyCompleted: false, removedLives };
+}
+
+async function refundPayment(env, userId, requestedBy, chargeId = "", reason = "Support refund") {
+  const payment = chargeId
+    ? await env.DB.prepare("SELECT * FROM payments WHERE user_id=? AND telegram_charge_id=?").bind(userId, chargeId).first()
+    : await env.DB.prepare(
+      `SELECT p.* FROM payments p LEFT JOIN refunds r ON r.telegram_charge_id=p.telegram_charge_id AND r.status='completed'
+       WHERE p.user_id=? AND r.telegram_charge_id IS NULL ORDER BY p.created_at DESC LIMIT 1`,
+    ).bind(userId).first();
+  if (!payment) throw new Error("No refundable payment was found for this player.");
+  const prior = await env.DB.prepare("SELECT status FROM refunds WHERE telegram_charge_id=?")
+    .bind(payment.telegram_charge_id).first();
+  if (prior?.status === "completed") throw new Error("This payment has already been refunded.");
+  if (prior?.status === "pending") throw new Error("This refund is already being processed.");
+  const lock = prior?.status === "failed"
+    ? await env.DB.prepare(
+      `UPDATE refunds SET requested_by=?, status='pending', reason=?, requested_at=?, error=NULL
+       WHERE telegram_charge_id=? AND status='failed'`,
+    ).bind(requestedBy, reason, now(), payment.telegram_charge_id).run()
+    : await env.DB.prepare(
+      `INSERT OR IGNORE INTO refunds(telegram_charge_id, user_id, stars, lives, requested_by, status, reason, requested_at, error)
+       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, NULL)`,
+    ).bind(payment.telegram_charge_id, payment.user_id, payment.stars, payment.lives, requestedBy, reason, now()).run();
+  if (Number(lock.meta.changes) !== 1) throw new Error("This refund is already being processed or completed.");
+  try {
+    await telegram(env, "refundStarPayment", {
+      user_id: Number(payment.user_id),
+      telegram_payment_charge_id: payment.telegram_charge_id,
+    });
+  } catch (error) {
+    if (!String(error.message || error).toUpperCase().includes("CHARGE_ALREADY_REFUNDED")) {
+      await env.DB.prepare("UPDATE refunds SET status='failed', error=? WHERE telegram_charge_id=?")
+        .bind(String(error.message || error).slice(0, 500), payment.telegram_charge_id).run();
+      throw error;
+    }
+  }
+  return { payment, ...(await finalizeRefund(env, payment, requestedBy, reason)) };
+}
+
+async function applyRefundedPaymentUpdate(env, message) {
+  const refunded = message.refunded_payment || {};
+  const chargeId = String(refunded.telegram_payment_charge_id || "");
+  if (!chargeId) return;
+  const payment = await env.DB.prepare("SELECT * FROM payments WHERE telegram_charge_id=?").bind(chargeId).first();
+  if (!payment) return;
+  await finalizeRefund(env, payment, 0, "Telegram refunded payment update");
+}
+
+async function handleSupportAdminReply(env, message) {
+  const supportChatId = configuredId(env.SUPPORT_CHAT_ID, true);
+  if (!supportChatId || Number(message.chat.id) !== supportChatId || !message.reply_to_message) return false;
+  const mapping = await env.DB.prepare(
+    `SELECT t.* FROM support_messages m JOIN support_tickets t ON t.id=m.ticket_id
+     WHERE m.admin_message_id=? ORDER BY t.id DESC LIMIT 1`,
+  ).bind(message.reply_to_message.message_id).first();
+  if (!mapping) return false;
+  const adminId = configuredId(env.ADMIN_USER_ID);
+  if (!adminId || Number(message.from?.id) !== adminId) {
+    await telegram(env, "sendMessage", { chat_id: supportChatId, text: "⛔ Only the configured administrator can answer support tickets." });
+    return true;
+  }
+  const command = commandName(message);
+  if (command === "/refund") {
+    const chargeId = String(message.text || "").trim().split(/\s+/, 2)[1] || "";
+    try {
+      const result = await refundPayment(env, Number(mapping.user_id), adminId, chargeId, `Support ticket #${mapping.id}`);
+      await telegram(env, "sendMessage", {
+        chat_id: Number(mapping.user_chat_id),
+        text: `⭐ Refund completed: ${result.payment.stars} Stars. ${result.removedLives ? `${result.removedLives} unused paid lives were removed.` : "No unused paid lives remained."}`,
+      });
+      await telegram(env, "sendMessage", {
+        chat_id: supportChatId,
+        text: `✅ Refunded ${result.payment.stars} Stars for ticket #${mapping.id}. Charge: ${result.payment.telegram_charge_id}`,
+      });
+    } catch (error) {
+      await telegram(env, "sendMessage", { chat_id: supportChatId, text: `❌ Refund failed: ${String(error.message || error).slice(0, 800)}` });
+    }
+    return true;
+  }
+  if (command === "/close") {
+    await closeSupportTicket(env, mapping, true);
+    await telegram(env, "sendMessage", { chat_id: supportChatId, text: `✅ Ticket #${mapping.id} closed.` });
+    return true;
+  }
+  await telegram(env, "copyMessage", {
+    chat_id: Number(mapping.user_chat_id),
+    from_chat_id: supportChatId,
+    message_id: message.message_id,
+  });
+  await env.DB.prepare("UPDATE support_tickets SET updated_at=? WHERE id=?").bind(now(), mapping.id).run();
+  return true;
+}
+
 async function handleTelegramUpdate(env, update, origin) {
   if (update.pre_checkout_query) {
     const [ok, error] = await validatePreCheckout(env, update.pre_checkout_query);
@@ -418,15 +687,37 @@ async function handleTelegramUpdate(env, update, origin) {
     await applySuccessfulPayment(env, message);
     return;
   }
+  if (message.refunded_payment) {
+    await applyRefundedPaymentUpdate(env, message);
+    return;
+  }
+  if (await handleSupportAdminReply(env, message)) return;
   const chatId = message.chat.id;
-  await ensurePlayer(env, message.from || { id: chatId, first_name: "Player" });
-  const text = String(message.text || "").trim().toLowerCase();
-  if (text.startsWith("/start") || text.startsWith("/play")) {
+  const userId = await ensurePlayer(env, message.from || { id: chatId, first_name: "Player" });
+  const text = String(message.text || "").trim();
+  const lowerText = text.toLowerCase();
+  const command = commandName(message);
+  if (command === "/terms" || lowerText.startsWith("/start terms")) {
+    await telegram(env, "sendMessage", { chat_id: chatId, text: TERMS_TEXT });
+  } else if (command === "/support" || command === "/paysupport") {
+    await startSupportTicket(env, message, command === "/paysupport" ? "payment" : "support");
+  } else if (command === "/done") {
+    const ticket = await supportTicketForUser(env, userId);
+    if (ticket) await closeSupportTicket(env, ticket, true);
+    else await telegram(env, "sendMessage", { chat_id: chatId, text: "You do not have an open support ticket." });
+  } else if (command === "/myid" || command === "/chatid") {
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: `Your user ID: ${userId}\nThis chat ID: ${chatId}`,
+    });
+  } else if (command === "/start" || command === "/play") {
     await sendPlayButton(env, chatId, origin);
-  } else if (text.startsWith("/score") || text.startsWith("/scores")) {
+  } else if (command === "/score" || command === "/scores") {
     await sendPlayButton(env, chatId, origin, "🏆 Open TRAP and tap SCORES.");
-  } else if (text) {
-    await sendPlayButton(env, chatId, origin);
+  } else {
+    const ticket = await supportTicketForUser(env, userId);
+    if (ticket) await relaySupportMessage(env, message, ticket);
+    else if (text) await sendPlayButton(env, chatId, origin, "Use /support for help or /paysupport for payments and refunds.");
   }
 }
 
@@ -475,9 +766,19 @@ async function handleApi(request, env, url) {
   if (url.pathname === "/api/leaderboard" && request.method === "GET") {
     return json({ ok: true, ...(await leaderboardForUser(env, userId)) });
   }
+  if (url.pathname === "/api/terms" && request.method === "GET") {
+    return json({ ok: true, version: TERMS_VERSION, accepted: await hasAcceptedTerms(env, userId), text: TERMS_TEXT });
+  }
+  if (url.pathname === "/api/terms/accept" && request.method === "POST") {
+    await acceptTerms(env, userId);
+    return json({ ok: true, version: TERMS_VERSION, accepted: true });
+  }
   if (url.pathname === "/api/invoice" && request.method === "POST") {
     const stars = clampInt(body.stars, 0, 1000);
     if (!LIFE_PACKS[stars]) return json({ ok: false, error: "invalid life pack" }, 400);
+    if (!(await hasAcceptedTerms(env, userId))) {
+      return json({ ok: false, error: "accept the TRAP terms before purchasing", code: "terms_not_accepted" }, 403);
+    }
     const player = await getPlayer(env, userId);
     if (player.progress.lives > 0 || player.progress.paidLives > 0) {
       return json({ ok: false, error: "life packs are only available when no lives or paid reserve remain" }, 409);
