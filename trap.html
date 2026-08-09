@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v46</title>
+<title>TRAP: Ten Rooms · v47</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -126,6 +126,24 @@
   #adRewardStatus{min-height:15px;margin-top:9px;color:var(--bone-dim);font-size:9px;line-height:1.4}
   #adRewardPrivacy{margin-top:8px;color:#65615b;font-size:8px;line-height:1.35}
   #adRewardPrivacy a{color:#8c8378;text-decoration:underline}
+  #moderationAdModal{display:none;position:fixed;inset:0;z-index:80;align-items:center;justify-content:center;
+                padding:24px;background:rgba(0,0,0,.96);text-align:center}
+  #moderationAdModal.show{display:flex}
+  #moderationAdCreative{width:min(420px,100%);min-height:min(620px,82vh);display:flex;flex-direction:column;
+                align-items:center;justify-content:center;padding:30px 24px;border:2px solid rgba(214,167,67,.72);
+                background:radial-gradient(circle at 50% 35%,rgba(183,35,39,.32),transparent 45%),
+                repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 5px),#08090d;
+                box-shadow:0 0 60px rgba(183,35,39,.24),inset 0 0 55px rgba(183,35,39,.1)}
+  #moderationAdBadge{padding:7px 12px;border:1px solid rgba(239,65,59,.7);color:#f0c1b9;font-size:9px;
+                font-weight:900;letter-spacing:.18em;text-transform:uppercase}
+  #moderationAdBrand{margin-top:30px;color:var(--gold);font-family:"Arial Narrow",Impact,sans-serif;
+                font-size:clamp(40px,11vw,66px);font-weight:900;letter-spacing:.08em;text-shadow:3px 4px 0 #3f0d13}
+  #moderationAdTitle{margin-top:8px;color:var(--bone);font-size:13px;font-weight:900;letter-spacing:.18em;text-transform:uppercase}
+  #moderationAdCopy{max-width:320px;margin:24px 0;color:var(--bone-dim);font-size:11px;line-height:1.65}
+  #moderationAdClose{width:100%;padding:14px 18px;border:1px solid rgba(214,167,67,.7);
+                background:linear-gradient(180deg,#251b0e,#100d0b);color:var(--gold);font-size:10px;
+                font-weight:900;letter-spacing:.15em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
+  #moderationAdFine{margin-top:14px;color:#6d6861;font-size:8px;line-height:1.45}
   #lifeStore{display:none;width:min(420px,100%);padding:15px;border:1px solid rgba(217,164,65,.38);
              background:rgba(8,8,12,.88);box-shadow:0 12px 35px rgba(0,0,0,.48)}
   #lifeStore.show{display:block}
@@ -282,6 +300,16 @@
     ontouchstart="window.__trapStart&&window.__trapStart(event)"
     ontouchend="window.__trapStart&&window.__trapStart(event)">Start</button>
 </div>
+<div id="moderationAdModal" aria-hidden="true">
+  <div id="moderationAdCreative" role="dialog" aria-modal="true" aria-labelledby="moderationAdTitle">
+    <div id="moderationAdBadge">MODERATION PREVIEW · TEST AD</div>
+    <div id="moderationAdBrand">ADSGRAM</div>
+    <div id="moderationAdTitle">FULL-SCREEN REWARDED PLACEMENT</div>
+    <div id="moderationAdCopy">This local test creative demonstrates where the optional AdsGram advertisement opens after the player loses all lives. Real advertiser creatives are delivered only inside the verified Telegram Mini App.</div>
+    <button id="moderationAdClose" type="button">Close test ad · no reward</button>
+    <div id="moderationAdFine">NO IMPRESSION · NO SERVER RECORD · NO BONUS LIVES</div>
+  </div>
+</div>
 <div id="scoresPanel" aria-hidden="true">
   <div id="scoresCard" role="dialog" aria-modal="true" aria-labelledby="scoresTitle">
     <button id="scoresClose" type="button" aria-label="Close scores">×</button>
@@ -298,7 +326,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v46</div>
+<div id="versionTag">v47</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -388,6 +416,8 @@ const adRewardStatus=document.getElementById('adRewardStatus');
 const adRewardEyebrow=document.getElementById('adRewardEyebrow');
 const adRewardHint=document.getElementById('adRewardHint');
 const adRewardPrivacy=document.getElementById('adRewardPrivacy');
+const moderationAdModal=document.getElementById('moderationAdModal');
+const moderationAdClose=document.getElementById('moderationAdClose');
 const lifeStore=document.getElementById('lifeStore');
 const storeStatus=document.getElementById('storeStatus');
 const lifePackButtons=[...document.querySelectorAll('.lifePack')];
@@ -1516,10 +1546,10 @@ function setAdRewardVisible(visible){
       adRewardEyebrow.textContent='WATCH AN AD & CONTINUE · TEST PLACEMENT';
       document.getElementById('adRewardValue').textContent='+2 LIVES IN TELEGRAM';
       adRewardHint.textContent='This optional rewarded offer appears only after the player loses all lives. The player may instead restart, invite a friend, or use Telegram Stars.';
-      adRewardButton.textContent='▶ Open AdsGram test ad';
+      adRewardButton.textContent='▶ Open full-screen test ad';
       adRewardButton.disabled=false;
       adRewardStatus.textContent='MODERATION PREVIEW · TEST ONLY — NO LIVES WILL BE ADDED AND THE CHECKPOINT WILL NOT RESUME.';
-      adRewardPrivacy.textContent='The button opens the AdsGram test creative. This browser preview creates no TRAP reward or server record.';
+      adRewardPrivacy.textContent='The button opens a local full-screen placement preview. Real AdsGram creatives require Telegram launch parameters.';
     }else{
       adRewardButton.disabled=adRewardNeedsReload;
       if(adRewardNeedsReload) adRewardStatus.textContent='AdsGram is still stuck loading. Change network or disable VPN/ad blocking, then close and reopen the Mini App.';
@@ -1608,19 +1638,8 @@ async function waitForProductionAdReward(){
 async function watchRewardedAd(){
   if(adRewardInFlight) return;
   if(MODERATION_PREVIEW){
-    adRewardInFlight=true; adRewardButton.disabled=true; adRewardStatus.textContent='Loading AdsGram test ad…';
-    try{
-      const controller=await loadAdsgramController();
-      adRewardStatus.textContent='Requesting test ad…';
-      const result=await showAdsgramAd(controller);
-      if(result&&result.done===false) throw new Error('The test ad was not completed.');
-      adRewardStatus.textContent='Test ad completed. No progress, reward or server record was created.';
-    }catch(result){
-      const description=String(result&&result.description||result&&result.message||'Test ad could not be shown.');
-      adRewardStatus.textContent='AdsGram test: '+description.slice(0,180);
-    }finally{
-      adRewardInFlight=false; adRewardButton.disabled=false;
-    }
+    moderationAdModal.classList.add('show'); moderationAdModal.setAttribute('aria-hidden','false');
+    adRewardStatus.textContent='Full-screen test placement opened. No progress, reward or server record was created.';
     return;
   }
   if(!SESSION_VERIFIED||!HAS_TELEGRAM_BACKEND){ adRewardStatus.textContent='Open the verified Telegram Mini App to watch an ad.'; return; }
@@ -2035,6 +2054,14 @@ lifePackButtons.forEach(button=>{
 const startRewardedAd=e=>{e.preventDefault();e.stopPropagation();watchRewardedAd();};
 adRewardButton.addEventListener('click',startRewardedAd);
 adRewardButton.addEventListener('touchend',startRewardedAd,{passive:false});
+const closeModerationAd=e=>{
+  if(e){e.preventDefault();e.stopPropagation();}
+  moderationAdModal.classList.remove('show'); moderationAdModal.setAttribute('aria-hidden','true');
+  adRewardStatus.textContent='Test ad closed. No bonus lives were added.';
+};
+moderationAdClose.addEventListener('click',closeModerationAd);
+moderationAdClose.addEventListener('touchend',closeModerationAd,{passive:false});
+moderationAdModal.addEventListener('click',e=>{if(e.target===moderationAdModal)closeModerationAd(e);});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.won) refreshRemoteState(true);});
 addEventListener('pagehide',()=>{if(!BETA_TEST_MODE&&!state.won) persistSnapshot(serializeProgress('playing'),true);});
 
@@ -2777,7 +2804,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v46-full-moderation-ad-offer'
+    buildId:'v47-moderation-ad-fallback'
   };
 }
 })();
