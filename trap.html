@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v45</title>
+<title>TRAP: Ten Rooms · v46</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -110,6 +110,10 @@
                 background:radial-gradient(circle at 50% 0,rgba(183,35,39,.2),transparent 58%),rgba(8,8,12,.92);
                 box-shadow:0 12px 35px rgba(0,0,0,.5),inset 0 0 30px rgba(183,35,39,.07)}
   #adRewardCard.show{display:block}
+  #adRewardCard.moderationPreview{border:2px solid rgba(214,167,67,.78);
+                background:radial-gradient(circle at 50% 0,rgba(183,35,39,.27),transparent 60%),rgba(8,8,12,.96)}
+  #adRewardCard.moderationPreview #adRewardStatus{margin-top:12px;padding:10px;border:1px solid rgba(239,65,59,.62);
+                background:rgba(100,10,17,.2);color:#f0c1b9;font-size:10px;font-weight:900;letter-spacing:.05em;line-height:1.5}
   #adRewardEyebrow{color:var(--bone-dim);font-size:9px;font-weight:900;letter-spacing:.2em;text-transform:uppercase}
   #adRewardValue{margin:7px 0 5px;color:var(--blood-bright);font-family:"Arial Narrow",Impact,sans-serif;
                  font-size:26px;font-weight:900;letter-spacing:.08em;text-shadow:0 2px 0 #35090d}
@@ -294,7 +298,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v45</div>
+<div id="versionTag">v46</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -1505,15 +1509,17 @@ function setAdRewardVisible(visible){
     (adRewardIsAvailable()&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0)
   ));
   adRewardCard.classList.toggle('show',show);
+  adRewardCard.classList.toggle('moderationPreview',Boolean(show&&MODERATION_PREVIEW));
   adRewardCard.setAttribute('aria-hidden',show?'false':'true');
   if(show&&!adRewardInFlight){
     if(MODERATION_PREVIEW){
-      adRewardEyebrow.textContent='OPTIONAL REWARDED AD · MODERATION TEST';
-      adRewardHint.textContent='In production this placement appears only after the player loses all lives. Watching is optional: the player can restart, invite a friend, or use Telegram Stars instead.';
-      adRewardButton.textContent='▶ Show test ad · no reward';
+      adRewardEyebrow.textContent='WATCH AN AD & CONTINUE · TEST PLACEMENT';
+      document.getElementById('adRewardValue').textContent='+2 LIVES IN TELEGRAM';
+      adRewardHint.textContent='This optional rewarded offer appears only after the player loses all lives. The player may instead restart, invite a friend, or use Telegram Stars.';
+      adRewardButton.textContent='▶ Open AdsGram test ad';
       adRewardButton.disabled=false;
-      adRewardStatus.textContent='Test placement only — progress and life balances will not change.';
-      adRewardPrivacy.textContent='AdsGram test mode. No TRAP reward or server record is created from this browser preview.';
+      adRewardStatus.textContent='MODERATION PREVIEW · TEST ONLY — NO LIVES WILL BE ADDED AND THE CHECKPOINT WILL NOT RESUME.';
+      adRewardPrivacy.textContent='The button opens the AdsGram test creative. This browser preview creates no TRAP reward or server record.';
     }else{
       adRewardButton.disabled=adRewardNeedsReload;
       if(adRewardNeedsReload) adRewardStatus.textContent='AdsGram is still stuck loading. Change network or disable VPN/ad blocking, then close and reopen the Mini App.';
@@ -2277,13 +2283,14 @@ function showGameOverOverlay(){
   state.running=false; state.won=true;
   ovT.textContent='NO LIVES LEFT';
   ovS.innerHTML=MODERATION_PREVIEW
-    ? 'You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>This browser preview does not save progress. Begin again from Level 1 or open the verified Telegram Mini App for the full game.'
+    ? 'You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>Below is the full rewarded-ad offer used by the Telegram Mini App. The test ad opens in this preview, but <b style="color:var(--blood-bright)">no bonus lives are credited</b>.'
     : 'You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>Your checkpoint is saved. Watch an ad for bonus lives, invite a new player, buy lives with Telegram Stars, or begin again from Level 1.';
   ovB.textContent='Begin Again'; ovB.dataset.act='restart';
   setShareVisible(true,'game_over',LI+1,state.deaths);
-  setAdRewardVisible(true);
   setLifeStoreVisible(true);
   setBetaPickerVisible(true); ov.classList.remove('hidden');
+  // Keep the full test placement visible after all other game-over sections are configured.
+  setAdRewardVisible(true);
 }
 function gameOver(){
   showGameOverOverlay();
@@ -2770,7 +2777,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v45-moderation-test-ad'
+    buildId:'v46-full-moderation-ad-offer'
   };
 }
 })();
