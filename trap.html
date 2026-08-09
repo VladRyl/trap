@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v44</title>
+<title>TRAP: Ten Rooms · v45</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -294,7 +294,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v44</div>
+<div id="versionTag">v45</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -381,6 +381,9 @@ const resumeInfo=document.getElementById('resumeInfo');
 const adRewardCard=document.getElementById('adRewardCard');
 const adRewardButton=document.getElementById('adRewardButton');
 const adRewardStatus=document.getElementById('adRewardStatus');
+const adRewardEyebrow=document.getElementById('adRewardEyebrow');
+const adRewardHint=document.getElementById('adRewardHint');
+const adRewardPrivacy=document.getElementById('adRewardPrivacy');
 const lifeStore=document.getElementById('lifeStore');
 const storeStatus=document.getElementById('storeStatus');
 const lifePackButtons=[...document.querySelectorAll('.lifePack')];
@@ -1497,13 +1500,25 @@ function adRewardIsAvailable(){
   return SESSION_VERIFIED&&HAS_TELEGRAM_BACKEND;
 }
 function setAdRewardVisible(visible){
-  const show=Boolean(visible&&!MODERATION_PREVIEW&&adRewardIsAvailable()&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0);
+  const show=Boolean(visible&&(
+    MODERATION_PREVIEW||
+    (adRewardIsAvailable()&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0)
+  ));
   adRewardCard.classList.toggle('show',show);
   adRewardCard.setAttribute('aria-hidden',show?'false':'true');
   if(show&&!adRewardInFlight){
-    adRewardButton.disabled=adRewardNeedsReload;
-    if(adRewardNeedsReload) adRewardStatus.textContent='AdsGram is still stuck loading. Change network or disable VPN/ad blocking, then close and reopen the Mini App.';
-    else adRewardStatus.textContent=ADSGRAM_DEBUG?'TEST AD · only the owner can receive this test reward.':'';
+    if(MODERATION_PREVIEW){
+      adRewardEyebrow.textContent='OPTIONAL REWARDED AD · MODERATION TEST';
+      adRewardHint.textContent='In production this placement appears only after the player loses all lives. Watching is optional: the player can restart, invite a friend, or use Telegram Stars instead.';
+      adRewardButton.textContent='▶ Show test ad · no reward';
+      adRewardButton.disabled=false;
+      adRewardStatus.textContent='Test placement only — progress and life balances will not change.';
+      adRewardPrivacy.textContent='AdsGram test mode. No TRAP reward or server record is created from this browser preview.';
+    }else{
+      adRewardButton.disabled=adRewardNeedsReload;
+      if(adRewardNeedsReload) adRewardStatus.textContent='AdsGram is still stuck loading. Change network or disable VPN/ad blocking, then close and reopen the Mini App.';
+      else adRewardStatus.textContent=ADSGRAM_DEBUG?'TEST AD · only the owner can receive this test reward.':'';
+    }
   }
   updateOverlayLayout();
 }
@@ -1530,10 +1545,11 @@ async function loadAdsgramController(){
   try{await adsgramSdkPromise;}
   catch(error){adsgramSdkPromise=null;throw error;}
   if(!window.Adsgram||typeof window.Adsgram.init!=='function') throw new Error('The ad provider is unavailable.');
+  const debugMode=MODERATION_PREVIEW||ADSGRAM_DEBUG;
   adsgramController=window.Adsgram.init({
     blockId:ADSGRAM_BLOCK_ID,
-    debug:ADSGRAM_DEBUG,
-    debugConsole:ADSGRAM_DEBUG,
+    debug:debugMode,
+    debugConsole:debugMode,
     debugBannerType:'FullscreenMedia'
   });
   return adsgramController;
@@ -1541,7 +1557,12 @@ async function loadAdsgramController(){
 function showAdsgramAd(controller){
   return new Promise((resolve,reject)=>{
     let settled=false,started=false;
-    const onStart=()=>{started=true;clearTimeout(timer);adRewardStatus.textContent='Ad started… Watch it to the end for +'+AD_REWARD_LIVES+' lives.';};
+    const onStart=()=>{
+      started=true; clearTimeout(timer);
+      adRewardStatus.textContent=MODERATION_PREVIEW
+        ? 'AdsGram test ad started. No reward will be granted in moderation preview.'
+        : 'Ad started… Watch it to the end for +'+AD_REWARD_LIVES+' lives.';
+    };
     const cleanup=()=>{clearTimeout(timer);if(typeof controller.removeEventListener==='function')controller.removeEventListener('onStart',onStart);};
     const finish=(ok,value)=>{if(settled)return;settled=true;cleanup();ok?resolve(value):reject(value);};
     const timer=setTimeout(()=>{
@@ -1580,6 +1601,22 @@ async function waitForProductionAdReward(){
 }
 async function watchRewardedAd(){
   if(adRewardInFlight) return;
+  if(MODERATION_PREVIEW){
+    adRewardInFlight=true; adRewardButton.disabled=true; adRewardStatus.textContent='Loading AdsGram test ad…';
+    try{
+      const controller=await loadAdsgramController();
+      adRewardStatus.textContent='Requesting test ad…';
+      const result=await showAdsgramAd(controller);
+      if(result&&result.done===false) throw new Error('The test ad was not completed.');
+      adRewardStatus.textContent='Test ad completed. No progress, reward or server record was created.';
+    }catch(result){
+      const description=String(result&&result.description||result&&result.message||'Test ad could not be shown.');
+      adRewardStatus.textContent='AdsGram test: '+description.slice(0,180);
+    }finally{
+      adRewardInFlight=false; adRewardButton.disabled=false;
+    }
+    return;
+  }
   if(!SESSION_VERIFIED||!HAS_TELEGRAM_BACKEND){ adRewardStatus.textContent='Open the verified Telegram Mini App to watch an ad.'; return; }
   if(state.lives>0||state.rewardLives>0||state.paidLives>0){ adRewardStatus.textContent='The ad reward is available only when no lives remain.'; return; }
   adRewardInFlight=true; adRewardButton.disabled=true; adRewardStatus.textContent='Loading rewarded ad…';
@@ -1831,10 +1868,11 @@ async function initializeSave(){
   if(BETA_TEST_MODE){ SESSION_VERIFIED=true; STATE_READY_FOR_WRITES=true; ovB.disabled=false; return; }
   if(MODERATION_PREVIEW){
     state.running=false; SESSION_VERIFIED=false; resumeProgress=null;
-    setAdRewardVisible(false); setLifeStoreVisible(false); setBetaPickerVisible(false); setShareVisible(false);
+    setLifeStoreVisible(false); setBetaPickerVisible(false); setShareVisible(false);
     scoreOpenButtons.forEach(button=>{button.hidden=true;});
     ovT.textContent='TRAP';
-    ovS.innerHTML='Ten trap-filled rooms are waiting.<br><br><b style="color:var(--gold)">MODERATION PREVIEW</b><br>Gameplay is enabled, but progress, scores, ads, payments, sharing and rewards require the verified Telegram Mini App.';
+    ovS.innerHTML='Ten trap-filled rooms are waiting.<br><br><b style="color:var(--gold)">MODERATION PREVIEW</b><br>Gameplay and the optional AdsGram test placement are enabled. Progress, rewards, payments, sharing and scores require the verified Telegram Mini App.';
+    setAdRewardVisible(true);
     ovB.textContent='Start Preview'; ovB.dataset.act='start'; ovB.disabled=false;
     return;
   }
@@ -2732,7 +2770,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v44-moderation-preview'
+    buildId:'v45-moderation-test-ad'
   };
 }
 })();
