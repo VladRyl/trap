@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v41</title>
+<title>TRAP: Ten Rooms · v42</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -294,7 +294,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v41</div>
+<div id="versionTag">v42</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -336,6 +336,19 @@ const LOCAL_SAVE_KEY='trap_progress_v18';
 
 if(TELEGRAM_WEB_APP){
   try{ TELEGRAM_WEB_APP.ready(); TELEGRAM_WEB_APP.expand(); }catch(_){ }
+}
+
+function hapticImpact(style='light'){
+  try{
+    const haptic=TELEGRAM_WEB_APP&&TELEGRAM_WEB_APP.HapticFeedback;
+    if(haptic&&typeof haptic.impactOccurred==='function') haptic.impactOccurred(style);
+  }catch(_){ }
+}
+function hapticNotification(type){
+  try{
+    const haptic=TELEGRAM_WEB_APP&&TELEGRAM_WEB_APP.HapticFeedback;
+    if(haptic&&typeof haptic.notificationOccurred==='function') haptic.notificationOccurred(type);
+  }catch(_){ }
 }
 
 const PW=0.8, PH=1.8;
@@ -473,7 +486,7 @@ let lastCollapseSoundAt=-1000;
 function playCollapseSound(){
   const now=performance.now();
   if(now-lastCollapseSoundAt<180) return;
-  lastCollapseSoundAt=now; playSound('collapse');
+  lastCollapseSoundAt=now; playSound('collapse'); hapticImpact('medium');
 }
 function updateSoundToggle(){
   soundToggle.textContent=soundMuted?'🔇':'🔊';
@@ -1318,6 +1331,7 @@ function updateHazardAudio(dt){
     if(wall&&!wall.landed) playSound('slabFall');
   }else if(wall&&!hazardAudio.wallLanded&&wall.landed){
     hazardAudio.wallLanded=true; playSound('slabImpact');
+    if(state.dead<=0) hapticImpact('heavy');
   }
 
   if(state.proj!==hazardAudio.projectile){
@@ -1542,6 +1556,7 @@ function resumeAfterAdReward(progress){
   ov.classList.add('hidden'); state.running=true; state.won=false; state.gameOverPending=false; last=0; acc=0;
   state.saveMsg=1.8; state.saveTxt='AD REWARD +'+AD_REWARD_LIVES+' LIVES';
   playSound('reward');
+  hapticNotification('success');
   return true;
 }
 async function waitForProductionAdReward(){
@@ -2116,6 +2131,7 @@ function giveCoin(id){
   cbox.classList.add('bump'); setTimeout(()=>cbox.classList.remove('bump'),100);
 }
 function hitBlock(tx,ty){
+  hapticImpact('rigid');
   state.blockBumps.push({x:tx,y:ty,t:.22,max:.22});
   grid[ty][tx]=3;
   const b=L.blocks.find(b=>b.x===tx&&(b.row||8)===ty);
@@ -2171,6 +2187,7 @@ function hitBossRune(tx,ty){
 function die(){
   if(state.dead>0||state.won) return;
   playSound('death');
+  hapticNotification('error');
   spawnDeathFx();
   state.dead=0.88; state.deaths++;
   if(!BETA_TEST_MODE){
@@ -2192,6 +2209,7 @@ function tryFlag(){
   if(!state.reqKnown){ state.reqKnown=true; creq.textContent='/'+state.req; }
   if(state.coins>=state.req){ win(); return; }
   playSound('reject');
+  hapticNotification('warning');
   state.rejectMsg=2.6; state.shake=0.4;
   if(L.hidden&&!state.hiddenOn){ state.hiddenOn=true; grid[8][L.hidden.x]=2; }
   if(L.rejectToStart){
@@ -2218,6 +2236,7 @@ function win(){
   state.won=true; state.running=false;
   const last=LI>=LEVELS.length-1;
   playSound(last?'complete':'clear');
+  hapticNotification('success');
   const completedLevel=LI+1;
   const completedDeaths=state.deaths;
   let bonus='';
@@ -2259,6 +2278,7 @@ function applyReferralReward(reward){
   if(!amount||!progress) return;
   state.rewardLives=Math.max(state.rewardLives,Number(progress.rewardLives)||0);
   playSound('reward');
+  hapticNotification('success');
   remotePaymentVersion=Math.max(remotePaymentVersion,Number(reward.referredPaymentVersion)||0);
   localSave(progress); updateLives();
   if(state.won) ovS.insertAdjacentHTML('beforeend','<br><b style="color:var(--gold)">+'+amount+' REFERRAL LIVES</b><br><span style="color:var(--bone-dim)">YOU AND YOUR INVITER WERE REWARDED</span>');
@@ -2314,6 +2334,7 @@ function step(dt){
     if(p.x>=L.checks[i]&&i>state.cp){
       state.cp=i; state.saveMsg=1.1; state.saveTxt='SAVED';
       playSound('checkpoint');
+      hapticNotification('success');
       queueSave('playing'); submitScore(LI+1); break;
     }
   }
@@ -2692,7 +2713,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v41-hazard-sfx'
+    buildId:'v42-telegram-haptics'
   };
 }
 })();
