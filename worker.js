@@ -1843,6 +1843,8 @@ export default {
           adsgramBlockId: adsgramBlockId(env),
           adsgramDebug: adsgramDebug(env),
           adsgramTestUserId: configuredId(env.ADMIN_USER_ID) || 0,
+          // Temporary public, read-only gameplay access for platform moderation.
+          moderationPreview: String(env.MODERATION_PREVIEW || "0") === "1",
         }).replaceAll("<", "\\u003c");
         const renderedGameHtml = gameHtml.replace(
           "window.__TRAP_CONFIG__={};",

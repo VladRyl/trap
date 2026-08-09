@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v43</title>
+<title>TRAP: Ten Rooms · v44</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -294,7 +294,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v43</div>
+<div id="versionTag">v44</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -327,6 +327,12 @@ let HAS_TELEGRAM_BACKEND=Boolean(TG_SESSION&&API_BASE);
 const TELEGRAM_WEB_APP=window.Telegram&&Telegram.WebApp;
 const MINI_APP_INIT_DATA=String(TELEGRAM_WEB_APP&&TELEGRAM_WEB_APP.initData||'');
 const IS_MINI_APP=Boolean(MINI_APP_INIT_DATA);
+// Temporary read-only browser access for advertising-platform moderation.
+// The Worker controls this flag; local testing can use ?moderation=1.
+const MODERATION_PREVIEW=(!IS_MINI_APP&&!TG_SESSION)&&(
+  Boolean(RUNTIME_CONFIG.moderationPreview)||
+  (LOCAL_TEST_HOSTS.has(location.hostname)&&URL_PARAMS.get('moderation')==='1')
+);
 const TELEGRAM_USER_ID=Number(TELEGRAM_WEB_APP&&TELEGRAM_WEB_APP.initDataUnsafe&&TELEGRAM_WEB_APP.initDataUnsafe.user&&TELEGRAM_WEB_APP.initDataUnsafe.user.id)||0;
 const TELEGRAM_START_URL='https://t.me/trap_game_bot?startapp';
 let SESSION_VERIFIED=false;
@@ -1491,7 +1497,7 @@ function adRewardIsAvailable(){
   return SESSION_VERIFIED&&HAS_TELEGRAM_BACKEND;
 }
 function setAdRewardVisible(visible){
-  const show=Boolean(visible&&adRewardIsAvailable()&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0);
+  const show=Boolean(visible&&!MODERATION_PREVIEW&&adRewardIsAvailable()&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0);
   adRewardCard.classList.toggle('show',show);
   adRewardCard.setAttribute('aria-hidden',show?'false':'true');
   if(show&&!adRewardInFlight){
@@ -1614,10 +1620,11 @@ async function watchRewardedAd(){
   }
 }
 function setShareVisible(visible,context='',level=LI+1,deaths=state.deaths){
-  overlayShareResult=visible?{context,level:Number(level)||1,deaths:Number(deaths)||0}:null;
-  shareRewardCard.classList.toggle('show',Boolean(visible));
-  shareRewardCard.setAttribute('aria-hidden',visible?'false':'true');
-  shareChallengeButton.classList.toggle('show',Boolean(visible));
+  const show=Boolean(visible&&!MODERATION_PREVIEW);
+  overlayShareResult=show?{context,level:Number(level)||1,deaths:Number(deaths)||0}:null;
+  shareRewardCard.classList.toggle('show',show);
+  shareRewardCard.setAttribute('aria-hidden',show?'false':'true');
+  shareChallengeButton.classList.toggle('show',show);
   shareChallengeButton.disabled=false;
   shareStatus.textContent=''; shareStatus.classList.remove('show');
   updateOverlayLayout();
@@ -1822,6 +1829,15 @@ function showResume(progress){
 async function initializeSave(){
   STATE_READY_FOR_WRITES=false;
   if(BETA_TEST_MODE){ SESSION_VERIFIED=true; STATE_READY_FOR_WRITES=true; ovB.disabled=false; return; }
+  if(MODERATION_PREVIEW){
+    state.running=false; SESSION_VERIFIED=false; resumeProgress=null;
+    setAdRewardVisible(false); setLifeStoreVisible(false); setBetaPickerVisible(false); setShareVisible(false);
+    scoreOpenButtons.forEach(button=>{button.hidden=true;});
+    ovT.textContent='TRAP';
+    ovS.innerHTML='Ten trap-filled rooms are waiting.<br><br><b style="color:var(--gold)">MODERATION PREVIEW</b><br>Gameplay is enabled, but progress, scores, ads, payments, sharing and rewards require the verified Telegram Mini App.';
+    ovB.textContent='Start Preview'; ovB.dataset.act='start'; ovB.disabled=false;
+    return;
+  }
   ovB.disabled=true; ovB.textContent='Loading save…';
   await initializeTelegramSession();
   if(!HAS_TELEGRAM_BACKEND){ ACCESS_BLOCKED?showBlockedGate():showTelegramGate(); return; }
@@ -1860,7 +1876,7 @@ function showBlockedGate(){
   ovB.textContent='Close'; ovB.dataset.act='blocked'; ovB.disabled=false;
 }
 function setLifeStoreVisible(visible){
-  const show=Boolean(visible&&!BETA_TEST_MODE&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0);
+  const show=Boolean(visible&&!BETA_TEST_MODE&&!MODERATION_PREVIEW&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0);
   lifeStore.classList.toggle('show',show); lifeStore.setAttribute('aria-hidden',show?'false':'true');
   updateOverlayLayout();
   if(show){
@@ -2222,7 +2238,9 @@ function tryFlag(){
 function showGameOverOverlay(){
   state.running=false; state.won=true;
   ovT.textContent='NO LIVES LEFT';
-  ovS.innerHTML='You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>Your checkpoint is saved. Watch an ad for bonus lives, invite a new player, buy lives with Telegram Stars, or begin again from Level 1.';
+  ovS.innerHTML=MODERATION_PREVIEW
+    ? 'You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>This browser preview does not save progress. Begin again from Level 1 or open the verified Telegram Mini App for the full game.'
+    : 'You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>Your checkpoint is saved. Watch an ad for bonus lives, invite a new player, buy lives with Telegram Stars, or begin again from Level 1.';
   ovB.textContent='Begin Again'; ovB.dataset.act='restart';
   setShareVisible(true,'game_over',LI+1,state.deaths);
   setAdRewardVisible(true);
@@ -2645,7 +2663,7 @@ function go(){
   if(act==='telegram'){
     location.assign(TELEGRAM_START_URL); return;
   }
-  if(!SESSION_VERIFIED&&!BETA_TEST_MODE){ showTelegramGate(); return; }
+  if(!SESSION_VERIFIED&&!BETA_TEST_MODE&&!MODERATION_PREVIEW){ showTelegramGate(); return; }
   if(act==='next'){
     loadLevel(LI+1); STATE_READY_FOR_WRITES=true; queueSave('level_start',true); submitScore(LI+1);
   }else if(act==='resume'&&resumeProgress&&!BETA_TEST_MODE){
@@ -2714,7 +2732,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v43-level-7-fair-floor'
+    buildId:'v44-moderation-preview'
   };
 }
 })();
