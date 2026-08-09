@@ -285,7 +285,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v37</div>
+<div id="versionTag">v38</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -378,6 +378,7 @@ let lastStoreViewKey='';
 let adsgramSdkPromise=null;
 let adsgramController=null;
 let adRewardInFlight=false;
+let adRewardNeedsReload=false;
 function setBetaPickerVisible(visible){
   if(!BETA_TEST_MODE) return;
   betaLevelPicker.classList.toggle('show',visible);
@@ -1317,8 +1318,9 @@ function setAdRewardVisible(visible){
   adRewardCard.classList.toggle('show',show);
   adRewardCard.setAttribute('aria-hidden',show?'false':'true');
   if(show&&!adRewardInFlight){
-    adRewardButton.disabled=false;
-    adRewardStatus.textContent=ADSGRAM_DEBUG?'TEST AD · only the owner can receive this test reward.':'';
+    adRewardButton.disabled=adRewardNeedsReload;
+    if(adRewardNeedsReload) adRewardStatus.textContent='AdsGram is still stuck loading. Change network or disable VPN/ad blocking, then close and reopen the Mini App.';
+    else adRewardStatus.textContent=ADSGRAM_DEBUG?'TEST AD · only the owner can receive this test reward.':'';
   }
   updateOverlayLayout();
 }
@@ -1362,7 +1364,8 @@ function showAdsgramAd(controller){
     const timer=setTimeout(()=>{
       if(started)return;
       try{if(typeof controller.destroy==='function')controller.destroy();}catch(_){ }
-      finish(false,new Error('AdsGram did not start the ad in time. Close and reopen the Mini App, then try again.'));
+      const error=new Error('AdsGram API did not respond. Change network or disable VPN/ad blocking, then close and reopen the Mini App.');
+      error.code='ADSGRAM_STUCK_LOADING'; finish(false,error);
     },ADSGRAM_START_TIMEOUT);
     if(typeof controller.addEventListener==='function')controller.addEventListener('onStart',onStart);
     let showPromise;
@@ -1419,14 +1422,16 @@ async function watchRewardedAd(){
     adRewardStatus.textContent='Ad completed. Reward is still processing — reopen the game in a moment.';
   }catch(result){
     const description=String(result&&result.description||result&&result.message||'');
+    if(result&&result.code==='ADSGRAM_STUCK_LOADING'||/show when loading the banner/i.test(description)) adRewardNeedsReload=true;
     if(/banner.*not.*found|no banner/i.test(description)) adRewardStatus.textContent='No ad is available right now. Try again shortly.';
     else if(/non.?stop|several ads|too long session/i.test(description)) adRewardStatus.textContent='Please wait before watching another ad, or reopen the game.';
-    else if(/did not (load|start)|could not load|without its api/i.test(description)) adRewardStatus.textContent=description;
+    else if(/did not (load|start)|could not load|without its api|api did not respond/i.test(description)) adRewardStatus.textContent=description;
+    else if(/show when loading the banner/i.test(description)) adRewardStatus.textContent='AdsGram is still stuck loading. Change network or disable VPN/ad blocking, then close and reopen the Mini App.';
     else if(ADSGRAM_DEBUG&&description) adRewardStatus.textContent='AdsGram: '+description.slice(0,180);
     else adRewardStatus.textContent='The ad was skipped or could not be shown. No lives were added.';
   }finally{
     adRewardInFlight=false;
-    if(adRewardCard.classList.contains('show')) adRewardButton.disabled=false;
+    if(adRewardCard.classList.contains('show')) adRewardButton.disabled=adRewardNeedsReload;
   }
 }
 function setShareVisible(visible,context='',level=LI+1,deaths=state.deaths){
@@ -2502,7 +2507,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v37-adsgram-loader-timeout'
+    buildId:'v38-adsgram-network-timeout'
   };
 }
 })();
