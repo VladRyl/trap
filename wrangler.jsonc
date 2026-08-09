@@ -8,6 +8,8 @@
   "vars": {
     "GAME_SHORT_NAME": "trap_game",
     "GAME_BETA": "0",
+    "ADSGRAM_BLOCK_ID": "42002",
+    "ADSGRAM_DEBUG": "1",
     "PUBLIC_BASE_URL": "https://trap-game.trap-games.workers.dev"
   },
   "d1_databases": [

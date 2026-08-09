@@ -3,19 +3,22 @@ import trapShareImage from "./assets/trap-share-640x360-v2.jpg";
 
 const SESSION_TTL = 60 * 60 * 24 * 30;
 const MINI_APP_AUTH_MAX_AGE = 60 * 60 * 24;
-const LIFE_PACKS = { 10: 1, 50: 7, 100: 15 };
+const LIFE_PACKS = { 10: 5, 50: 25, 100: 60 };
 const LIFE_BALANCE_VERSION = 3;
 const REWARD_LIVES_MAX = 1_000_000;
 const REFERRAL_REWARD_LIVES = 5;
-const TERMS_VERSION = 2;
-const TERMS_TEXT = `TRAP TERMS & REFUND POLICY (version 2)
+const AD_REWARD_LIVES = 2;
+const TERMS_VERSION = 3;
+const TERMS_TEXT = `TRAP TERMS & REFUND POLICY (version 3)
 
 1. TRAP is a digital game. Life packs are digital goods sold only for Telegram Stars.
 2. Purchased lives are credited after Telegram confirms a successful payment. Unused purchased lives remain attached to your Telegram account.
 3. Launch-period refund policy: you may request a full refund through /paysupport. Refunds are processed by the bot operator. Telegram is not responsible for support or refunds.
 4. When a purchase is refunded, any unused lives from that purchase may be removed from your paid-life reserve. A refund can also be granted after lives were used, at the operator's discretion.
 5. Game progress, gameplay events, acquisition source, referral relationships, support messages, payment identifiers and refund records are stored against your Telegram user ID to operate and improve the game, attribute invitations, prevent duplicate rewards and provide support.
-6. The service is provided as-is. Availability and game balance may change.
+6. Optional rewarded advertisements are supplied by AdsGram. AdsGram may process technical request data and your Telegram identifier to serve and account for an ad. A reward is granted only after AdsGram confirms a completed view. Availability is not guaranteed.
+7. Bonus lives earned from advertisements or referrals are spent after regular lives and before purchased lives.
+8. The service is provided as-is. Availability and game balance may change.
 
 By purchasing a life pack, you confirm that you accept these terms. For general help use /support. For payment or refund help use /paysupport.`;
 let schemaReady;
@@ -154,6 +157,19 @@ const SCHEMA = [
     CHECK(referred_user_id <> referrer_user_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_user_id, qualified_at)`,
+  `CREATE TABLE IF NOT EXISTS ad_rewards (
+    reward_key TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    block_id TEXT NOT NULL,
+    level INTEGER NOT NULL,
+    checkpoint INTEGER NOT NULL,
+    deaths INTEGER NOT NULL,
+    lives INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    granted_at INTEGER,
+    FOREIGN KEY(user_id) REFERENCES players(user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_ad_rewards_user_created ON ad_rewards(user_id, created_at)`,
 ];
 
 function now() {
@@ -423,6 +439,97 @@ async function recordAnalyticsEvent(env, userId, eventName, details = {}) {
     safeMetadata(details.metadata),
     now(),
   ).run();
+}
+
+function adsgramBlockId(env) {
+  const blockId = String(env.ADSGRAM_BLOCK_ID || "").trim();
+  return /^\d{1,20}$/.test(blockId) ? blockId : "";
+}
+
+function adsgramDebug(env) {
+  return String(env.ADSGRAM_DEBUG || "0") === "1";
+}
+
+async function awardAdsgramLives(env, userId, source) {
+  const blockId = adsgramBlockId(env);
+  if (!blockId) return { ok: false, error: "AdsGram is not configured" };
+  if (await isUserBlocked(env, userId)) return { ok: false, error: "blocked" };
+
+  const recent = await env.DB.prepare(
+    "SELECT granted_at FROM ad_rewards WHERE user_id=? AND block_id=? AND granted_at>=? ORDER BY granted_at DESC LIMIT 1",
+  ).bind(userId, blockId, now() - 30).first();
+  if (recent) return { ok: false, error: "ad reward cooldown", player: await getPlayer(env, userId) };
+
+  const player = await getPlayer(env, userId);
+  if (!player) return { ok: false, error: "player not found" };
+  const progress = player.progress;
+  if (progress.screen !== "game_over" || progress.lives > 0 || progress.rewardLives > 0 || progress.paidLives > 0) {
+    return { ok: false, error: "ad rewards are available only with no lives left", player };
+  }
+
+  const level = clampInt(progress.level, 0, 9);
+  const checkpoint = clampInt(progress.checkpoint, 0, 30);
+  const deaths = clampInt(progress.deaths, 0, 10_000_000);
+  // The saved player timestamp identifies this exact Game Over state. Using it
+  // avoids blocking a legitimate future reward when the same level/death count
+  // happens again, while duplicate callbacks still resolve to the same row.
+  const rewardKey = `${blockId}:${userId}:${clampInt(player.updated_at, 0, Number.MAX_SAFE_INTEGER)}`;
+  const timestamp = now();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO ad_rewards
+     (reward_key, user_id, block_id, level, checkpoint, deaths, lives, created_at, granted_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+  ).bind(rewardKey, userId, blockId, level, checkpoint, deaths, AD_REWARD_LIVES, timestamp).run();
+
+  const reward = await env.DB.prepare("SELECT granted_at FROM ad_rewards WHERE reward_key=?").bind(rewardKey).first();
+  if (reward?.granted_at != null) {
+    return { ok: true, granted: false, already_granted: true, player: await getPlayer(env, userId) };
+  }
+
+  const update = await env.DB.prepare(
+    `UPDATE players SET
+       progress_json=json_set(progress_json,
+         '$.rewardLives', MIN(?, COALESCE(CAST(json_extract(progress_json, '$.rewardLives') AS INTEGER), 0) + ?),
+         '$.lifeBalanceVersion', ?,
+         '$.screen', 'level_start'),
+       payment_version=payment_version+1,
+       updated_at=?
+     WHERE user_id=?
+       AND COALESCE(CAST(json_extract(progress_json, '$.lives') AS INTEGER), 0)=0
+       AND COALESCE(CAST(json_extract(progress_json, '$.rewardLives') AS INTEGER), 0)=0
+       AND COALESCE(CAST(json_extract(progress_json, '$.paidLives') AS INTEGER), 0)=0
+       AND COALESCE(json_extract(progress_json, '$.screen'), '')='game_over'
+       AND EXISTS (SELECT 1 FROM ad_rewards WHERE reward_key=? AND granted_at IS NULL)`,
+  ).bind(
+    REWARD_LIVES_MAX,
+    AD_REWARD_LIVES,
+    LIFE_BALANCE_VERSION,
+    timestamp,
+    userId,
+    rewardKey,
+  ).run();
+
+  if (Number(update.meta.changes) !== 1) {
+    return { ok: false, error: "ad reward state changed", player: await getPlayer(env, userId) };
+  }
+
+  await env.DB.batch([
+    env.DB.prepare("UPDATE ad_rewards SET granted_at=? WHERE reward_key=? AND granted_at IS NULL")
+      .bind(timestamp, rewardKey),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO analytics_events
+       (user_id, event_name, event_key, level, value, metadata_json, created_at)
+       VALUES (?, 'ad_reward_granted', ?, ?, ?, ?, ?)`,
+    ).bind(
+      userId,
+      `ad_reward:${rewardKey}`,
+      level + 1,
+      AD_REWARD_LIVES,
+      safeMetadata({ block_id: blockId, source, deaths, checkpoint }),
+      timestamp,
+    ),
+  ]);
+  return { ok: true, granted: true, lives: AD_REWARD_LIVES, player: await getPlayer(env, userId) };
 }
 
 async function getOrCreateReferralCode(env, userId) {
@@ -706,6 +813,7 @@ async function adminStatsMessage(env) {
   const completions = metric("game_complete");
   const shares = metric("share_sent");
   const rewardLives = metric("reward_granted");
+  const adRewards = metric("ad_reward_granted");
   const deaths = metric("death");
   const stores = metric("store_view");
   const invoices = metric("invoice_created");
@@ -731,7 +839,8 @@ async function adminStatsMessage(env) {
     `Referral opens: ${Number(referralRow.opened || 0)}\n` +
     `Qualified referrals: ${Number(referralRow.qualified || 0)}\n` +
     `Rewarded referrals: ${Number(referralRow.rewarded || 0)}\n` +
-    `Referral lives granted: ${rewardLives.value} to ${rewardLives.all} players\n\n` +
+    `Referral lives granted: ${rewardLives.value} to ${rewardLives.all} players\n` +
+    `Rewarded ads: ${adRewards.events} by ${adRewards.all} players · ${adRewards.value} lives granted\n\n` +
     `Payments: ${Number(paymentRow.count || 0)} from ${Number(paymentRow.users || 0)} players · ${Number(paymentRow.stars || 0)} Stars\n` +
     `Refunds: ${Number(refundRow.count || 0)} · ${Number(refundRow.stars || 0)} Stars\n` +
     `Net Stars: ${Number(paymentRow.stars || 0) - Number(refundRow.stars || 0)}\n\n` +
@@ -1569,6 +1678,13 @@ async function handleApi(request, env, url) {
   if (session.blocked_at != null) return json({ ok: false, error: "blocked" }, 403);
   const userId = Number(session.user_id);
 
+  if (url.pathname === "/api/adsgram/test-reward" && request.method === "POST") {
+    if (!adsgramDebug(env)) return json({ ok: false, error: "test rewards are disabled" }, 404);
+    if (userId !== configuredId(env.ADMIN_USER_ID)) return json({ ok: false, error: "test reward is restricted" }, 403);
+    if (String(body.block_id || "") !== adsgramBlockId(env)) return json({ ok: false, error: "invalid ad block" }, 400);
+    const result = await awardAdsgramLives(env, userId, "debug_client");
+    return json(result, result.ok ? 200 : 409);
+  }
   if (url.pathname === "/api/state" && request.method === "GET") {
     return json({ ok: true, ...(await getPlayer(env, userId)) });
   }
@@ -1624,7 +1740,7 @@ async function handleApi(request, env, url) {
   }
   if (url.pathname === "/api/event" && request.method === "POST") {
     const eventName = String(body.event || "");
-    const allowedEvents = new Set(["game_start", "game_resume", "level_complete", "game_complete", "store_view", "share_sent"]);
+    const allowedEvents = new Set(["game_start", "game_resume", "level_complete", "game_complete", "store_view", "share_sent", "ad_view_started"]);
     if (!allowedEvents.has(eventName)) return json({ ok: false, error: "invalid event" }, 400);
     const level = clampInt(body.level, 0, 10);
     const storedName = eventName === "level_complete" ? `level_complete_${clampInt(level, 1, 10, 1)}` : eventName;
@@ -1653,7 +1769,7 @@ async function handleApi(request, env, url) {
     }
     const player = await getPlayer(env, userId);
     if (player.progress.lives > 0 || player.progress.rewardLives > 0 || player.progress.paidLives > 0) {
-      return json({ ok: false, error: "life packs are only available when no regular, referral or paid lives remain" }, 409);
+      return json({ ok: false, error: "life packs are only available when no regular, bonus or paid lives remain" }, 409);
     }
     const requestedDelivery = body.delivery === "chat" ? "chat" : "link";
     const invoice = await createInvoice(env, userId, stars, session.chat_id, requestedDelivery);
@@ -1683,6 +1799,18 @@ export default {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders() });
       await ensureSchema(env);
 
+      if (url.pathname === "/api/adsgram/reward" && request.method === "GET") {
+        if (adsgramDebug(env)) return json({ ok: false, error: "production reward callback is disabled" }, 409);
+        const configuredSecret = String(env.ADSGRAM_REWARD_SECRET || "");
+        const suppliedSecret = String(url.searchParams.get("secret") || "");
+        if (!configuredSecret || !safeEqual(configuredSecret, suppliedSecret)) {
+          return json({ ok: false, error: "unauthorized" }, 401);
+        }
+        const userId = configuredId(url.searchParams.get("userid") || url.searchParams.get("userId"));
+        if (!userId) return json({ ok: false, error: "invalid user" }, 400);
+        const result = await awardAdsgramLives(env, userId, "server_callback");
+        return json(result);
+      }
       if (url.pathname === "/telegram/webhook" && request.method === "POST") {
         if (!env.WEBHOOK_SECRET || request.headers.get("x-telegram-bot-api-secret-token") !== env.WEBHOOK_SECRET) {
           return json({ ok: false, error: "unauthorized" }, 401);
@@ -1711,7 +1839,16 @@ export default {
           url.searchParams.delete("beta");
           return Response.redirect(url.toString(), 302);
         }
-        return new Response(request.method === "HEAD" ? null : gameHtml, {
+        const runtimeConfig = JSON.stringify({
+          adsgramBlockId: adsgramBlockId(env),
+          adsgramDebug: adsgramDebug(env),
+          adsgramTestUserId: configuredId(env.ADMIN_USER_ID) || 0,
+        }).replaceAll("<", "\\u003c");
+        const renderedGameHtml = gameHtml.replace(
+          "window.__TRAP_CONFIG__={};",
+          `window.__TRAP_CONFIG__=${runtimeConfig};`,
+        );
+        return new Response(request.method === "HEAD" ? null : renderedGameHtml, {
           headers: {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-cache, no-store, must-revalidate",

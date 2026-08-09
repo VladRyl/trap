@@ -52,7 +52,25 @@ The private `/stats` command is restricted to `ADMIN_USER_ID`; it should not be 
 
 Challenge shares use Telegram prepared photo messages and links shaped like `https://t.me/trap_game_bot/play?startapp=r_CODE`. The message includes the TRAP image, the sender's personal bot link, and an explicit notice that only brand-new players qualify. On the first share for an asset version, the Worker briefly sends the image to `ADMIN_USER_ID`, stores the returned Telegram `file_id` in `bot_assets`, deletes the setup message, and uses the Telegram-cached photo thereafter; the public JPEG remains a fallback. Attribution is accepted only for a player who did not already exist when the signed Mini App session was created. After that new player clears Level 1, both the referrer and the new player receive five non-transferable `rewardLives`. Self-referrals and duplicate rewards are rejected by database constraints. There is intentionally no lifetime or weekly reward cap during launch.
 
-Life consumption order is regular lives, referral reward lives, then purchased lives. Referral rewards are stored separately from `paidLives`, so payment refunds never remove referral rewards.
+Life consumption order is regular lives, bonus lives, then purchased lives. Referral and rewarded-ad bonuses share the non-purchased `rewardLives` reserve, so payment refunds never remove them.
+
+## AdsGram rewarded ads
+
+The Game Over screen can grant two bonus lives after a completed AdsGram rewarded ad. Configuration uses:
+
+- `ADSGRAM_BLOCK_ID`: numeric AdsGram Reward block ID.
+- `ADSGRAM_DEBUG`: `1` for a test platform; only `ADMIN_USER_ID` sees and can claim the test reward. Set it to `0` for production.
+- `ADSGRAM_REWARD_SECRET`: production-only Cloudflare secret used to authenticate the AdsGram server callback.
+
+Debug ads do not call Reward URL. The verified admin client therefore uses `/api/adsgram/test-reward`; the Worker rejects every other user. In production, the browser never grants lives directly. AdsGram must call the authenticated Worker endpoint, which grants at most one reward for a particular Game Over state and applies a 30-second cooldown.
+
+For production, generate a long random secret, store it as the Cloudflare Worker secret `ADSGRAM_REWARD_SECRET`, and configure this exact Reward URL in AdsGram (replace `SECRET` without brackets):
+
+```text
+https://trap-game.trap-games.workers.dev/api/adsgram/reward?userid=[userId]&secret=SECRET
+```
+
+After changing to the production Block ID, set `ADSGRAM_DEBUG` to `0`, deploy, complete a real ad, and confirm that `ad_rewards.granted_at` is populated and `/stats` reports the rewarded ad. Do not expose the production secret in `wrangler.jsonc`, GitHub, the Mini App HTML or client JavaScript.
 
 ## Encrypted D1 backups
 

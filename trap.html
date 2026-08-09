@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>TRAP: Ten Rooms · v19</title>
+<script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <style>
   :root{
     --ink:#07090d; --ink-2:#0d1118; --ink-3:#171b22;
@@ -98,6 +99,22 @@
   #resumeInfo{display:none;max-width:390px;padding:10px 14px;border:1px solid rgba(217,164,65,.34);
               background:rgba(15,12,13,.64);color:var(--bone-dim);font-size:11px;line-height:1.55}
   #resumeInfo.show{display:block}
+  #adRewardCard{display:none;width:min(420px,100%);padding:16px;border:1px solid rgba(183,35,39,.72);
+                background:radial-gradient(circle at 50% 0,rgba(183,35,39,.2),transparent 58%),rgba(8,8,12,.92);
+                box-shadow:0 12px 35px rgba(0,0,0,.5),inset 0 0 30px rgba(183,35,39,.07)}
+  #adRewardCard.show{display:block}
+  #adRewardEyebrow{color:var(--bone-dim);font-size:9px;font-weight:900;letter-spacing:.2em;text-transform:uppercase}
+  #adRewardValue{margin:7px 0 5px;color:var(--blood-bright);font-family:"Arial Narrow",Impact,sans-serif;
+                 font-size:26px;font-weight:900;letter-spacing:.08em;text-shadow:0 2px 0 #35090d}
+  #adRewardHint{color:var(--bone-dim);font-size:11px;line-height:1.5}
+  #adRewardButton{width:100%;margin-top:12px;padding:13px 18px;border:1px solid rgba(214,167,67,.68);
+                  background:linear-gradient(180deg,#251b0e,#100d0b);color:var(--gold);font-size:10px;font-weight:900;
+                  letter-spacing:.15em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
+  #adRewardButton:active{transform:translateY(1px);background:#2b1a0d}
+  #adRewardButton:disabled{opacity:.45;cursor:wait}
+  #adRewardStatus{min-height:15px;margin-top:9px;color:var(--bone-dim);font-size:9px;line-height:1.4}
+  #adRewardPrivacy{margin-top:8px;color:#65615b;font-size:8px;line-height:1.35}
+  #adRewardPrivacy a{color:#8c8378;text-decoration:underline}
   #lifeStore{display:none;width:min(420px,100%);padding:15px;border:1px solid rgba(217,164,65,.38);
              background:rgba(8,8,12,.88);box-shadow:0 12px 35px rgba(0,0,0,.48)}
   #lifeStore.show{display:block}
@@ -213,17 +230,25 @@
     </select>
   </div>
   <div id="resumeInfo"></div>
+  <div id="adRewardCard" aria-hidden="true">
+    <div id="adRewardEyebrow">WATCH AN AD &amp; CONTINUE</div>
+    <div id="adRewardValue">+2 BONUS LIVES</div>
+    <div id="adRewardHint">Watch the rewarded ad to the end and continue from this checkpoint.</div>
+    <button id="adRewardButton" type="button">▶ Watch ad · +2 lives</button>
+    <div id="adRewardStatus"></div>
+    <div id="adRewardPrivacy">Optional ad supplied by AdsGram. Starting it shares technical request data and your Telegram identifier under the <a href="https://legal.adsgram.ai/privacy_current.pdf" target="_blank" rel="noopener noreferrer">AdsGram Privacy Policy</a>.</div>
+  </div>
   <div id="lifeStore" aria-hidden="true">
-    <div id="lifeStoreTitle">CONTINUE WITH TELEGRAM STARS</div>
+    <div id="lifeStoreTitle">OR CONTINUE WITH TELEGRAM STARS</div>
     <div id="lifeStoreSub">The purchase is credited to your Telegram account and restores this checkpoint. Unused paid lives remain after completing the game.</div>
     <div id="lifePacks">
-      <button class="lifePack" type="button" data-stars="10"><strong>+1 LIFE</strong><span>10 ⭐</span></button>
-      <button class="lifePack" type="button" data-stars="50"><strong>+7 LIVES</strong><span>50 ⭐</span></button>
-      <button class="lifePack" type="button" data-stars="100"><strong>+15 LIVES</strong><span>100 ⭐</span></button>
+      <button class="lifePack" type="button" data-stars="10"><strong>+5 LIVES</strong><span>10 ⭐</span></button>
+      <button class="lifePack" type="button" data-stars="50"><strong>+25 LIVES</strong><span>50 ⭐</span></button>
+      <button class="lifePack" type="button" data-stars="100"><strong>+60 LIVES</strong><span>100 ⭐</span></button>
     </div>
     <details id="termsBox">
       <summary>TERMS &amp; REFUND POLICY</summary>
-      <div id="termsText">Life packs are digital goods paid in Telegram Stars. Unused paid lives stay on your Telegram account. During the launch period you may request a full refund via /paysupport; a refund can remove unused paid lives. Payment and refund records are retained for delivery, support and fraud prevention.</div>
+      <div id="termsText">Life packs are digital goods paid in Telegram Stars. Unused paid lives stay on your Telegram account. During the launch period you may request a full refund via /paysupport; a refund can remove unused paid lives. Optional rewarded ads are supplied by AdsGram. Payment, reward and refund records are retained for delivery, support and fraud prevention.</div>
     </details>
     <label id="termsConsent"><input id="termsCheckbox" type="checkbox"><span>I have read and accept the TRAP Terms &amp; Refund Policy.</span></label>
     <div id="storeStatus"></div>
@@ -259,7 +284,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v35</div>
+<div id="versionTag">v36</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -269,6 +294,12 @@
 /* ================= константи ================= */
 const FW=16, FH=14, GROUND_Y=11;
 const LIFE_BALANCE_VERSION=3;
+const AD_REWARD_LIVES=2;
+const RUNTIME_CONFIG=window.__TRAP_CONFIG__||{};
+const ADSGRAM_BLOCK_ID=/^\d{1,20}$/.test(String(RUNTIME_CONFIG.adsgramBlockId||''))?String(RUNTIME_CONFIG.adsgramBlockId):'';
+const ADSGRAM_DEBUG=Boolean(RUNTIME_CONFIG.adsgramDebug);
+const ADSGRAM_TEST_USER_ID=Number(RUNTIME_CONFIG.adsgramTestUserId)||0;
+const ADSGRAM_SDK_URL='https://sad.adsgram.ai/js/sad.min.js';
 
 // ===== BETA TEST =====
 // true  = нескінченні життя для тестування
@@ -283,6 +314,7 @@ let HAS_TELEGRAM_BACKEND=Boolean(TG_SESSION&&API_BASE);
 const TELEGRAM_WEB_APP=window.Telegram&&Telegram.WebApp;
 const MINI_APP_INIT_DATA=String(TELEGRAM_WEB_APP&&TELEGRAM_WEB_APP.initData||'');
 const IS_MINI_APP=Boolean(MINI_APP_INIT_DATA);
+const TELEGRAM_USER_ID=Number(TELEGRAM_WEB_APP&&TELEGRAM_WEB_APP.initDataUnsafe&&TELEGRAM_WEB_APP.initDataUnsafe.user&&TELEGRAM_WEB_APP.initDataUnsafe.user.id)||0;
 const TELEGRAM_START_URL='https://t.me/trap_game_bot?startapp';
 let SESSION_VERIFIED=false;
 let ACCESS_BLOCKED=false;
@@ -314,6 +346,9 @@ const shareStatus=document.getElementById('shareStatus');
 const betaLevelPicker=document.getElementById('betaLevelPicker');
 const betaLevelSelect=document.getElementById('betaLevelSelect');
 const resumeInfo=document.getElementById('resumeInfo');
+const adRewardCard=document.getElementById('adRewardCard');
+const adRewardButton=document.getElementById('adRewardButton');
+const adRewardStatus=document.getElementById('adRewardStatus');
 const lifeStore=document.getElementById('lifeStore');
 const storeStatus=document.getElementById('storeStatus');
 const lifePackButtons=[...document.querySelectorAll('.lifePack')];
@@ -337,6 +372,9 @@ let saveInFlight=false;
 let overlayShareResult=null;
 let leaderboardShareResult=null;
 let lastStoreViewKey='';
+let adsgramSdkPromise=null;
+let adsgramController=null;
+let adRewardInFlight=false;
 function setBetaPickerVisible(visible){
   if(!BETA_TEST_MODE) return;
   betaLevelPicker.classList.toggle('show',visible);
@@ -1146,7 +1184,7 @@ function updateLives(){
   if(state.paidLives>0) reserves.push(compact(state.paidLives)+' PAID');
   paidnum.textContent=(!BETA_TEST_MODE||SHOW_TEST_LIFE_BALANCE)?reserves.join(' · '):'';
   lbox.title=BETA_TEST_MODE&&!SHOW_TEST_LIFE_BALANCE?'BETA TEST: infinite lives':
-    state.lives+' regular lives · '+state.rewardLives+' referral lives · '+state.paidLives+' purchased lives';
+    state.lives+' regular lives · '+state.rewardLives+' bonus lives · '+state.paidLives+' purchased lives';
   lbox.classList.add('bump'); setTimeout(()=>lbox.classList.remove('bump'),110);
 }
 function resetRun(){
@@ -1261,9 +1299,103 @@ function escapeHtml(value){
   return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 function updateOverlayLayout(){
-  const scrollable=shareRewardCard.classList.contains('show')||lifeStore.classList.contains('show');
+  const scrollable=adRewardCard.classList.contains('show')||shareRewardCard.classList.contains('show')||lifeStore.classList.contains('show');
   ov.classList.toggle('scrollable',scrollable);
   if(scrollable) ov.scrollTop=0;
+}
+function adRewardIsAvailable(){
+  if(!ADSGRAM_BLOCK_ID) return false;
+  if(BETA_TEST_MODE) return true;
+  if(ADSGRAM_DEBUG) return TELEGRAM_USER_ID>0&&TELEGRAM_USER_ID===ADSGRAM_TEST_USER_ID;
+  return SESSION_VERIFIED&&HAS_TELEGRAM_BACKEND;
+}
+function setAdRewardVisible(visible){
+  const show=Boolean(visible&&adRewardIsAvailable()&&state.lives<=0&&state.rewardLives<=0&&state.paidLives<=0);
+  adRewardCard.classList.toggle('show',show);
+  adRewardCard.setAttribute('aria-hidden',show?'false':'true');
+  if(show&&!adRewardInFlight){
+    adRewardButton.disabled=false;
+    adRewardStatus.textContent=ADSGRAM_DEBUG?'TEST AD · only the owner can receive this test reward.':'';
+  }
+  updateOverlayLayout();
+}
+async function loadAdsgramController(){
+  if(adsgramController) return adsgramController;
+  if(!ADSGRAM_BLOCK_ID) throw new Error('Ads are not configured yet.');
+  if(!adsgramSdkPromise){
+    adsgramSdkPromise=new Promise((resolve,reject)=>{
+      if(window.Adsgram){resolve();return;}
+      const script=document.createElement('script');
+      script.src=ADSGRAM_SDK_URL; script.async=true;
+      script.onload=resolve;
+      script.onerror=()=>reject(new Error('Could not load the ad provider.'));
+      document.head.appendChild(script);
+    });
+  }
+  await adsgramSdkPromise;
+  if(!window.Adsgram||typeof window.Adsgram.init!=='function') throw new Error('The ad provider is unavailable.');
+  adsgramController=window.Adsgram.init({
+    blockId:ADSGRAM_BLOCK_ID,
+    debug:ADSGRAM_DEBUG,
+    debugConsole:ADSGRAM_DEBUG,
+    debugBannerType:'RewardedVideo'
+  });
+  return adsgramController;
+}
+function resumeAfterAdReward(progress){
+  if(!applyProgress(progress)) return false;
+  resumeProgress=null; resumeInfo.classList.remove('show');
+  setAdRewardVisible(false); setShareVisible(false); setLifeStoreVisible(false);
+  ov.classList.add('hidden'); state.running=true; state.won=false; state.gameOverPending=false; last=0; acc=0;
+  state.saveMsg=1.8; state.saveTxt='AD REWARD +'+AD_REWARD_LIVES+' LIVES';
+  return true;
+}
+async function waitForProductionAdReward(){
+  for(const delay of [150,350,700,1200,2000,3200]){
+    await new Promise(resolve=>setTimeout(resolve,delay));
+    try{
+      const data=await apiRequest('/api/state');
+      remotePaymentVersion=Number(data.payment_version)||remotePaymentVersion;
+      if(data.progress) localSave(data.progress);
+      if(data.progress&&lifeTotal(data.progress)>0) return data.progress;
+    }catch(_){ }
+  }
+  return null;
+}
+async function watchRewardedAd(){
+  if(adRewardInFlight) return;
+  if(!SESSION_VERIFIED||!HAS_TELEGRAM_BACKEND){ adRewardStatus.textContent='Open the verified Telegram Mini App to watch an ad.'; return; }
+  if(state.lives>0||state.rewardLives>0||state.paidLives>0){ adRewardStatus.textContent='The ad reward is available only when no lives remain.'; return; }
+  adRewardInFlight=true; adRewardButton.disabled=true; adRewardStatus.textContent='Loading rewarded ad…';
+  try{
+    await persistSnapshot(serializeProgress('game_over'));
+    trackEvent('ad_view_started',{level:LI+1,deaths:state.deaths,context:ADSGRAM_DEBUG?'debug':'production'});
+    const controller=await loadAdsgramController();
+    const result=await controller.show();
+    if(result&&result.done===false) throw new Error('The ad was not completed.');
+    adRewardStatus.textContent='Ad completed. Adding '+AD_REWARD_LIVES+' lives…';
+    let progress=null;
+    if(ADSGRAM_DEBUG){
+      const data=await apiRequest('/api/adsgram/test-reward',{
+        method:'POST',body:JSON.stringify({block_id:ADSGRAM_BLOCK_ID})
+      });
+      remotePaymentVersion=Number(data.player&&data.player.payment_version)||remotePaymentVersion;
+      progress=data.player&&data.player.progress;
+      if(progress) localSave(progress);
+    }else{
+      progress=await waitForProductionAdReward();
+    }
+    if(progress&&resumeAfterAdReward(progress)) return;
+    adRewardStatus.textContent='Ad completed. Reward is still processing — reopen the game in a moment.';
+  }catch(result){
+    const description=String(result&&result.description||result&&result.message||'');
+    if(/banner.*not.*found|no banner/i.test(description)) adRewardStatus.textContent='No ad is available right now. Try again shortly.';
+    else if(/non.?stop|several ads|too long session/i.test(description)) adRewardStatus.textContent='Please wait before watching another ad, or reopen the game.';
+    else adRewardStatus.textContent='The ad was skipped or could not be shown. No lives were added.';
+  }finally{
+    adRewardInFlight=false;
+    if(adRewardCard.classList.contains('show')) adRewardButton.disabled=false;
+  }
 }
 function setShareVisible(visible,context='',level=LI+1,deaths=state.deaths){
   overlayShareResult=visible?{context,level:Number(level)||1,deaths:Number(deaths)||0}:null;
@@ -1447,7 +1579,7 @@ function showResume(progress){
     state.lives=3; updateLives();
     if(state.rewardLives>0||state.paidLives>0){
       const reserves=[];
-      if(state.rewardLives>0) reserves.push(state.rewardLives+' referral '+(state.rewardLives===1?'life':'lives'));
+      if(state.rewardLives>0) reserves.push(state.rewardLives+' bonus '+(state.rewardLives===1?'life':'lives'));
       if(state.paidLives>0) reserves.push(state.paidLives+' paid '+(state.paidLives===1?'life':'lives'));
       resumeInfo.innerHTML='<b style="color:var(--gold)">SAVED RESERVES</b><br>'+reserves.join(' · ')+' · new run starts with 3 free lives';
       resumeInfo.classList.add('show');
@@ -1496,7 +1628,7 @@ async function initializeSave(){
 }
 function showTelegramGate(){
   state.running=false; STATE_READY_FOR_WRITES=false; resumeProgress=null; resumeInfo.classList.remove('show');
-  setLifeStoreVisible(false); setBetaPickerVisible(false); ov.classList.remove('hidden');
+  setAdRewardVisible(false); setLifeStoreVisible(false); setBetaPickerVisible(false); ov.classList.remove('hidden');
   setShareVisible(false);
   ovT.textContent='TELEGRAM ONLY';
   ovS.innerHTML='Open TRAP from <b style="color:var(--gold)">@trap_game_bot</b> to verify your session.';
@@ -1505,7 +1637,7 @@ function showTelegramGate(){
 function showBlockedGate(){
   ACCESS_BLOCKED=true; state.running=false; SESSION_VERIFIED=false; STATE_READY_FOR_WRITES=false;
   resumeProgress=null; resumeInfo.classList.remove('show');
-  setLifeStoreVisible(false); setBetaPickerVisible(false); ov.classList.remove('hidden');
+  setAdRewardVisible(false); setLifeStoreVisible(false); setBetaPickerVisible(false); ov.classList.remove('hidden');
   setShareVisible(false);
   ovT.textContent='ACCESS BLOCKED';
   ovS.textContent='This Telegram account cannot access TRAP.';
@@ -1552,13 +1684,13 @@ async function refreshRemoteState(resume=false){
 }
 function resumeAfterPayment(progress){
   if(!applyProgress(progress)) return;
-  resumeProgress=null; resumeInfo.classList.remove('show'); setLifeStoreVisible(false);
+  resumeProgress=null; resumeInfo.classList.remove('show'); setAdRewardVisible(false); setLifeStoreVisible(false);
   ov.classList.add('hidden'); state.running=true; state.won=false; state.gameOverPending=false; last=0; acc=0;
   storeStatus.textContent='Lives restored. Continue.';
 }
 async function buyLifePack(stars){
   if(!HAS_TELEGRAM_BACKEND){ storeStatus.textContent='Open the game from the Telegram bot to buy lives.'; return; }
-  if(state.lives>0||state.rewardLives>0||state.paidLives>0){ storeStatus.textContent='Life packs unlock only when no regular, referral or paid lives remain.'; return; }
+  if(state.lives>0||state.rewardLives>0||state.paidLives>0){ storeStatus.textContent='Life packs unlock only when no regular, bonus or paid lives remain.'; return; }
   try{ await ensureTermsAccepted(); }
   catch(err){ storeStatus.textContent=err.message||'Accept the terms before purchasing.'; return; }
   lifePackButtons.forEach(b=>b.disabled=true); storeStatus.textContent='Creating Telegram Stars invoice…';
@@ -1624,6 +1756,9 @@ lifePackButtons.forEach(button=>{
   const start=e=>{e.preventDefault();e.stopPropagation();buyLifePack(Number(button.dataset.stars));};
   button.addEventListener('click',start); button.addEventListener('touchend',start,{passive:false});
 });
+const startRewardedAd=e=>{e.preventDefault();e.stopPropagation();watchRewardedAd();};
+adRewardButton.addEventListener('click',startRewardedAd);
+adRewardButton.addEventListener('touchend',startRewardedAd,{passive:false});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.won) refreshRemoteState(true);});
 addEventListener('pagehide',()=>{if(!BETA_TEST_MODE&&!state.won) persistSnapshot(serializeProgress('playing'),true);});
 
@@ -1862,9 +1997,10 @@ function tryFlag(){
 function showGameOverOverlay(){
   state.running=false; state.won=true;
   ovT.textContent='NO LIVES LEFT';
-  ovS.innerHTML='You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>Your checkpoint is saved. Buy lives with Telegram Stars or begin again from Level 1.';
+  ovS.innerHTML='You reached <b>'+L.name+'</b> with <b style="color:var(--blood)">'+state.deaths+'</b> deaths.<br>Your checkpoint is saved. Watch an ad for bonus lives, invite a new player, buy lives with Telegram Stars, or begin again from Level 1.';
   ovB.textContent='Begin Again'; ovB.dataset.act='restart';
   setShareVisible(true,'game_over',LI+1,state.deaths);
+  setAdRewardVisible(true);
   setLifeStoreVisible(true);
   setBetaPickerVisible(true); ov.classList.remove('hidden');
 }
@@ -1890,13 +2026,14 @@ function win(){
   ovT.textContent=last?'THE NIGHTMARE ENDS':(L.name.toUpperCase()+' CLEARED');
   ovS.innerHTML=(state.req>0?('Coins: <b style="color:var(--gold)">'+state.coins+' / '+state.req+'</b><br>'):'')+
     'Lives: <b style="color:var(--blood-bright)">'+(BETA_TEST_MODE?'∞ · BETA':state.lives)+'</b>'+
-    (!BETA_TEST_MODE&&state.rewardLives?'<br>Referral reserve: <b style="color:var(--gold)">'+state.rewardLives+'</b>':'')+
+    (!BETA_TEST_MODE&&state.rewardLives?'<br>Bonus reserve: <b style="color:var(--gold)">'+state.rewardLives+'</b>':'')+
     (!BETA_TEST_MODE&&state.paidLives?'<br>Paid reserve: <b style="color:var(--gold)">'+state.paidLives+'</b>':'')+
     '<br>Total deaths: <b style="color:var(--blood)">'+state.deaths+'</b>'+bonus+
     (last?'<br><br>You survived all ten rooms.':'<br><br>The next room is worse.');
   ovB.textContent=last?'Restart':'Next';
   ovB.dataset.act=last?'restart':'next';
   setShareVisible(true,last?'game_complete':'level_complete',completedLevel,completedDeaths);
+  setAdRewardVisible(false);
   setLifeStoreVisible(false);
   const saved=serializeProgress(last?'game_complete':'level_complete');
   if(!last){ saved.level=LI+1; saved.checkpoint=0; saved.coins=0; saved.got=[]; saved.hiddenOn=false; saved.reqKnown=false; saved.flags={}; }
@@ -2278,7 +2415,7 @@ function go(){
   if(act==='resume') trackEvent('game_resume',{level:LI+1,deaths:state.deaths});
   else if(act!=='next') trackEvent('game_start',{level:LI+1,deaths:state.deaths});
   setShareVisible(false);
-  setLifeStoreVisible(false); setBetaPickerVisible(false);
+  setAdRewardVisible(false); setLifeStoreVisible(false); setBetaPickerVisible(false);
   ovB.dataset.act='restart';
   ov.classList.add('hidden');
   state.running=true; last=0; acc=0;
@@ -2333,7 +2470,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v33-five-lives-both'
+    buildId:'v36-adsgram-reward'
   };
 }
 })();
