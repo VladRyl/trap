@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v48</title>
+<title>TRAP: Ten Rooms · v49</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -326,7 +326,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v48</div>
+<div id="versionTag">v49</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -1647,6 +1647,14 @@ async function watchRewardedAd(){
   adRewardInFlight=true; adRewardButton.disabled=true; adRewardStatus.textContent='Loading rewarded ad…';
   try{
     await persistSnapshot(serializeProgress('game_over'));
+    let adAttemptToken='';
+    if(!ADSGRAM_DEBUG){
+      const attempt=await apiRequest('/api/adsgram/attempt',{
+        method:'POST',body:JSON.stringify({block_id:ADSGRAM_BLOCK_ID})
+      });
+      adAttemptToken=String(attempt.attempt_token||'');
+      if(!adAttemptToken) throw new Error('Could not prepare the ad reward.');
+    }
     trackEvent('ad_view_started',{level:LI+1,deaths:state.deaths,context:ADSGRAM_DEBUG?'debug':'production'});
     adRewardStatus.textContent='Connecting to AdsGram…';
     const controller=await loadAdsgramController();
@@ -1663,7 +1671,16 @@ async function watchRewardedAd(){
       progress=data.player&&data.player.progress;
       if(progress) localSave(progress);
     }else{
-      progress=await waitForProductionAdReward();
+      try{
+        const data=await apiRequest('/api/adsgram/client-reward',{
+          method:'POST',body:JSON.stringify({attempt_token:adAttemptToken})
+        });
+        remotePaymentVersion=Number(data.player&&data.player.payment_version)||remotePaymentVersion;
+        progress=data.player&&data.player.progress;
+      }catch(error){
+        progress=error&&error.data&&error.data.player&&error.data.player.progress;
+        if(!progress||lifeTotal(progress)<=0) progress=await waitForProductionAdReward();
+      }
     }
     if(progress&&resumeAfterAdReward(progress)) return;
     adRewardStatus.textContent='Ad completed. Reward is still processing — reopen the game in a moment.';
@@ -2804,7 +2821,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v48-production-ads'
+    buildId:'v49-reliable-ad-rewards'
   };
 }
 })();

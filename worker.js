@@ -8,6 +8,8 @@ const LIFE_BALANCE_VERSION = 3;
 const REWARD_LIVES_MAX = 1_000_000;
 const REFERRAL_REWARD_LIVES = 5;
 const AD_REWARD_LIVES = 2;
+const AD_ATTEMPT_MIN_AGE = 2;
+const AD_ATTEMPT_MAX_AGE = 15 * 60;
 const TERMS_VERSION = 3;
 const TERMS_TEXT = `TRAP TERMS & REFUND POLICY (version 3)
 
@@ -448,6 +450,47 @@ function adsgramBlockId(env) {
 
 function adsgramDebug(env) {
   return String(env.ADSGRAM_DEBUG || "0") === "1";
+}
+
+async function createAdsgramAttempt(env, userId) {
+  const blockId = adsgramBlockId(env);
+  const secret = String(env.ADSGRAM_REWARD_SECRET || "");
+  if (!blockId || !secret) return { ok: false, error: "AdsGram is not configured" };
+  const player = await getPlayer(env, userId);
+  if (!player) return { ok: false, error: "player not found" };
+  const progress = player.progress;
+  if (progress.screen !== "game_over" || progress.lives > 0 || progress.rewardLives > 0 || progress.paidLives > 0) {
+    return { ok: false, error: "ad rewards are available only with no lives left", player };
+  }
+  const issuedAt = now();
+  const nonce = crypto.randomUUID().replaceAll("-", "");
+  const payload = `${userId}.${blockId}.${player.updated_at}.${issuedAt}.${nonce}`;
+  const signature = bytesToHex(await hmacSha256(secret, payload));
+  return { ok: true, attempt_token: `${payload}.${signature}`, expires_in: AD_ATTEMPT_MAX_AGE };
+}
+
+async function claimAdsgramClientReward(env, userId, token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 6) return { ok: false, error: "invalid ad attempt" };
+  const [tokenUser, tokenBlock, tokenUpdatedAt, tokenIssuedAt, nonce, signature] = parts;
+  const blockId = adsgramBlockId(env);
+  const secret = String(env.ADSGRAM_REWARD_SECRET || "");
+  const parsedUser = configuredId(tokenUser);
+  const updatedAt = clampInt(tokenUpdatedAt, 1, Number.MAX_SAFE_INTEGER);
+  const issuedAt = clampInt(tokenIssuedAt, 1, Number.MAX_SAFE_INTEGER);
+  if (!secret || parsedUser !== userId || tokenBlock !== blockId || !/^[a-f0-9]{32}$/i.test(nonce) || !/^[a-f0-9]{64}$/i.test(signature)) {
+    return { ok: false, error: "invalid ad attempt" };
+  }
+  const payload = parts.slice(0, 5).join(".");
+  const expected = bytesToHex(await hmacSha256(secret, payload));
+  if (!safeEqual(expected, signature.toLowerCase())) return { ok: false, error: "invalid ad attempt" };
+  const age = now() - issuedAt;
+  if (age < AD_ATTEMPT_MIN_AGE || age > AD_ATTEMPT_MAX_AGE) return { ok: false, error: "expired ad attempt" };
+  const player = await getPlayer(env, userId);
+  if (!player || Number(player.updated_at) !== updatedAt) {
+    return { ok: false, error: "ad reward state changed", player };
+  }
+  return awardAdsgramLives(env, userId, "client_callback");
 }
 
 async function awardAdsgramLives(env, userId, source) {
@@ -1685,6 +1728,17 @@ async function handleApi(request, env, url) {
     const result = await awardAdsgramLives(env, userId, "debug_client");
     return json(result, result.ok ? 200 : 409);
   }
+  if (url.pathname === "/api/adsgram/attempt" && request.method === "POST") {
+    if (adsgramDebug(env)) return json({ ok: false, error: "production ads are disabled" }, 409);
+    if (String(body.block_id || "") !== adsgramBlockId(env)) return json({ ok: false, error: "invalid ad block" }, 400);
+    const result = await createAdsgramAttempt(env, userId);
+    return json(result, result.ok ? 200 : 409);
+  }
+  if (url.pathname === "/api/adsgram/client-reward" && request.method === "POST") {
+    if (adsgramDebug(env)) return json({ ok: false, error: "production ads are disabled" }, 409);
+    const result = await claimAdsgramClientReward(env, userId, body.attempt_token);
+    return json(result, result.ok ? 200 : 409);
+  }
   if (url.pathname === "/api/state" && request.method === "GET") {
     return json({ ok: true, ...(await getPlayer(env, userId)) });
   }
@@ -1802,7 +1856,12 @@ export default {
       if (url.pathname === "/api/adsgram/reward" && request.method === "GET") {
         if (adsgramDebug(env)) return json({ ok: false, error: "production reward callback is disabled" }, 409);
         const configuredSecret = String(env.ADSGRAM_REWARD_SECRET || "");
-        const suppliedSecret = String(url.searchParams.get("secret") || "");
+        const rawSuppliedSecret = String(url.searchParams.get("secret") || "");
+        // Accept the accidental "ADSGRAM_REWARD_SECRET=value" form used in the
+        // first dashboard setup without weakening the actual secret comparison.
+        const suppliedSecret = rawSuppliedSecret.startsWith("ADSGRAM_REWARD_SECRET=")
+          ? rawSuppliedSecret.slice("ADSGRAM_REWARD_SECRET=".length)
+          : rawSuppliedSecret;
         if (!configuredSecret || !safeEqual(configuredSecret, suppliedSecret)) {
           return json({ ok: false, error: "unauthorized" }, 401);
         }

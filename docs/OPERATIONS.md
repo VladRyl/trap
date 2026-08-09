@@ -62,7 +62,7 @@ The Game Over screen can grant two bonus lives after a completed AdsGram rewarde
 - `ADSGRAM_DEBUG`: `1` for a test platform; only `ADMIN_USER_ID` sees and can claim the test reward. Set it to `0` for production.
 - `ADSGRAM_REWARD_SECRET`: production-only Cloudflare secret used to authenticate the AdsGram server callback.
 
-Debug ads do not call Reward URL. The verified admin client therefore uses `/api/adsgram/test-reward`; the Worker rejects every other user. In production, the browser never grants lives directly. AdsGram must call the authenticated Worker endpoint, which grants at most one reward for a particular Game Over state and applies a 30-second cooldown.
+Debug ads do not call Reward URL. The verified admin client therefore uses `/api/adsgram/test-reward`; the Worker rejects every other user. In production, the client creates a signed, state-bound ad attempt before calling AdsGram. After AdsGram's `show()` callback confirms completion, the authenticated Mini App claims that attempt. Reward URL remains an additional server confirmation path. Both paths converge on the same idempotent grant, which grants at most one reward for a particular Game Over state and applies a 30-second cooldown.
 
 For production, generate a long random secret, store it as the Cloudflare Worker secret `ADSGRAM_REWARD_SECRET`, and configure this exact Reward URL in AdsGram (replace `SECRET` without brackets):
 
