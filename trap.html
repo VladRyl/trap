@@ -449,6 +449,7 @@ let adRewardInFlight=false;
 /* ================= звук ================= */
 let soundMuted=false;
 try{ soundMuted=localStorage.getItem(SOUND_PREF_KEY)==='1'; }catch(_){ }
+const MASTER_SOUND_VOLUME=.28;
 let audioCtx=null, masterGain=null, noiseBuffer=null, soundToggleAt=-1000;
 
 function ensureAudio(){
@@ -458,7 +459,7 @@ function ensureAudio(){
   try{
     audioCtx=new AudioContextClass();
     masterGain=audioCtx.createGain();
-    masterGain.gain.value=soundMuted?0:.22;
+    masterGain.gain.value=soundMuted?0:MASTER_SOUND_VOLUME;
     masterGain.connect(audioCtx.destination);
     return audioCtx;
   }catch(_){ return null; }
@@ -542,7 +543,7 @@ function toggleSound(e){
   const now=performance.now(); if(now-soundToggleAt<220) return; soundToggleAt=now;
   soundMuted=!soundMuted;
   try{ localStorage.setItem(SOUND_PREF_KEY,soundMuted?'1':'0'); }catch(_){ }
-  if(masterGain) masterGain.gain.setValueAtTime(soundMuted?0:.22,audioCtx.currentTime);
+  if(masterGain) masterGain.gain.setValueAtTime(soundMuted?0:MASTER_SOUND_VOLUME,audioCtx.currentTime);
   updateSoundToggle();
   if(!soundMuted) playSound('start');
 }
