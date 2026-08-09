@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v42</title>
+<title>TRAP: Ten Rooms · v43</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -294,7 +294,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v42</div>
+<div id="versionTag">v43</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -1078,9 +1078,10 @@ const LEVELS=[
     for(let x=40;x<=44;x++) grid[8][x]=1;
   },
   update(dt){
-    if(!T.sickBed&&p.onG&&p.x+PW>58&&p.x<61.8){
+    // Keep the checkpoint tile at x=58 solid; the collapsing floor starts one tile later.
+    if(!T.sickBed&&p.onG&&p.x+PW>59&&p.x<61.8){
       T.sickT=(T.sickT||0)+dt;
-      if(T.sickT>.24){ T.sickBed=true; carve(58,61); state.shake=.42; playCollapseSound(); }
+      if(T.sickT>.24){ T.sickBed=true; carve(59,61); state.shake=.42; playCollapseSound(); }
     }else if(!T.sickBed) T.sickT=0;
     if(!T.bridgeFall&&p.onG&&p.x+PW>87&&p.x<89.4&&p.y<9.35){
       T.bridgeT=(T.bridgeT||0)+dt;
@@ -2713,7 +2714,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v42-telegram-haptics'
+    buildId:'v43-level-7-fair-floor'
   };
 }
 })();
