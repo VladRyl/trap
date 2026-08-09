@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>TRAP: Ten Rooms · v19</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
+<script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
   :root{
     --ink:#07090d; --ink-2:#0d1118; --ink-3:#171b22;
@@ -284,7 +285,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v36</div>
+<div id="versionTag">v37</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -300,6 +301,8 @@ const ADSGRAM_BLOCK_ID=/^\d{1,20}$/.test(String(RUNTIME_CONFIG.adsgramBlockId||'
 const ADSGRAM_DEBUG=Boolean(RUNTIME_CONFIG.adsgramDebug);
 const ADSGRAM_TEST_USER_ID=Number(RUNTIME_CONFIG.adsgramTestUserId)||0;
 const ADSGRAM_SDK_URL='https://sad.adsgram.ai/js/sad.min.js';
+const ADSGRAM_SDK_TIMEOUT=10000;
+const ADSGRAM_START_TIMEOUT=15000;
 
 // ===== BETA TEST =====
 // true  = нескінченні життя для тестування
@@ -1325,22 +1328,47 @@ async function loadAdsgramController(){
   if(!adsgramSdkPromise){
     adsgramSdkPromise=new Promise((resolve,reject)=>{
       if(window.Adsgram){resolve();return;}
-      const script=document.createElement('script');
-      script.src=ADSGRAM_SDK_URL; script.async=true;
-      script.onload=resolve;
-      script.onerror=()=>reject(new Error('Could not load the ad provider.'));
-      document.head.appendChild(script);
+      let settled=false;
+      const script=document.getElementById('adsgram-sdk')||document.createElement('script');
+      const finish=(error)=>{
+        if(settled) return; settled=true; clearTimeout(timer);
+        script.removeEventListener('load',onLoad); script.removeEventListener('error',onError);
+        error?reject(error):resolve();
+      };
+      const onLoad=()=>window.Adsgram?finish():finish(new Error('AdsGram SDK loaded without its API.'));
+      const onError=()=>finish(new Error('Could not load AdsGram SDK. Check your connection and try again.'));
+      const timer=setTimeout(()=>finish(new Error('AdsGram SDK did not load in time. Close and reopen the Mini App.')),ADSGRAM_SDK_TIMEOUT);
+      script.addEventListener('load',onLoad,{once:true}); script.addEventListener('error',onError,{once:true});
+      if(!script.id){script.id='adsgram-sdk';script.src=ADSGRAM_SDK_URL;script.async=true;document.head.appendChild(script);}
     });
   }
-  await adsgramSdkPromise;
+  try{await adsgramSdkPromise;}
+  catch(error){adsgramSdkPromise=null;throw error;}
   if(!window.Adsgram||typeof window.Adsgram.init!=='function') throw new Error('The ad provider is unavailable.');
   adsgramController=window.Adsgram.init({
     blockId:ADSGRAM_BLOCK_ID,
     debug:ADSGRAM_DEBUG,
     debugConsole:ADSGRAM_DEBUG,
-    debugBannerType:'RewardedVideo'
+    debugBannerType:'FullscreenMedia'
   });
   return adsgramController;
+}
+function showAdsgramAd(controller){
+  return new Promise((resolve,reject)=>{
+    let settled=false,started=false;
+    const onStart=()=>{started=true;clearTimeout(timer);adRewardStatus.textContent='Ad started… Watch it to the end for +'+AD_REWARD_LIVES+' lives.';};
+    const cleanup=()=>{clearTimeout(timer);if(typeof controller.removeEventListener==='function')controller.removeEventListener('onStart',onStart);};
+    const finish=(ok,value)=>{if(settled)return;settled=true;cleanup();ok?resolve(value):reject(value);};
+    const timer=setTimeout(()=>{
+      if(started)return;
+      try{if(typeof controller.destroy==='function')controller.destroy();}catch(_){ }
+      finish(false,new Error('AdsGram did not start the ad in time. Close and reopen the Mini App, then try again.'));
+    },ADSGRAM_START_TIMEOUT);
+    if(typeof controller.addEventListener==='function')controller.addEventListener('onStart',onStart);
+    let showPromise;
+    try{showPromise=controller.show();}catch(error){finish(false,error);return;}
+    Promise.resolve(showPromise).then(result=>finish(true,result),error=>finish(false,error));
+  });
 }
 function resumeAfterAdReward(progress){
   if(!applyProgress(progress)) return false;
@@ -1370,8 +1398,10 @@ async function watchRewardedAd(){
   try{
     await persistSnapshot(serializeProgress('game_over'));
     trackEvent('ad_view_started',{level:LI+1,deaths:state.deaths,context:ADSGRAM_DEBUG?'debug':'production'});
+    adRewardStatus.textContent='Connecting to AdsGram…';
     const controller=await loadAdsgramController();
-    const result=await controller.show();
+    adRewardStatus.textContent=ADSGRAM_DEBUG?'Requesting test ad…':'Requesting rewarded ad…';
+    const result=await showAdsgramAd(controller);
     if(result&&result.done===false) throw new Error('The ad was not completed.');
     adRewardStatus.textContent='Ad completed. Adding '+AD_REWARD_LIVES+' lives…';
     let progress=null;
@@ -1391,6 +1421,8 @@ async function watchRewardedAd(){
     const description=String(result&&result.description||result&&result.message||'');
     if(/banner.*not.*found|no banner/i.test(description)) adRewardStatus.textContent='No ad is available right now. Try again shortly.';
     else if(/non.?stop|several ads|too long session/i.test(description)) adRewardStatus.textContent='Please wait before watching another ad, or reopen the game.';
+    else if(/did not (load|start)|could not load|without its api/i.test(description)) adRewardStatus.textContent=description;
+    else if(ADSGRAM_DEBUG&&description) adRewardStatus.textContent='AdsGram: '+description.slice(0,180);
     else adRewardStatus.textContent='The ad was skipped or could not be shown. No lives were added.';
   }finally{
     adRewardInFlight=false;
@@ -2470,7 +2502,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v36-adsgram-reward'
+    buildId:'v37-adsgram-loader-timeout'
   };
 }
 })();
