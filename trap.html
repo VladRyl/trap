@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v49</title>
+<title>TRAP: Ten Rooms · v50</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -280,7 +280,7 @@
     </div>
     <details id="termsBox">
       <summary>TERMS &amp; REFUND POLICY</summary>
-      <div id="termsText">Life packs are digital goods paid in Telegram Stars. Unused paid lives stay on your Telegram account. During the launch period you may request a full refund via /paysupport; a refund can remove unused paid lives. Optional rewarded ads are supplied by AdsGram. Payment, reward and refund records are retained for delivery, support and fraud prevention.</div>
+      <div id="termsText">Life packs are digital goods paid in Telegram Stars. Unused paid lives stay on your Telegram account. During the launch period you may request a full refund via /paysupport. Optional AdsGram rewarded ads are offered only when no lives remain; a completed and validated view grants 2 bonus lives. Skipped, interrupted, unavailable, duplicated or invalid attempts do not grant lives. AdsGram may process your Telegram identifier, technical data and ad interactions. Payment, reward and refund records are retained for delivery, support and fraud prevention.</div>
     </details>
     <label id="termsConsent"><input id="termsCheckbox" type="checkbox"><span>I have read and accept the TRAP Terms &amp; Refund Policy.</span></label>
     <div id="storeStatus"></div>
@@ -326,7 +326,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v49</div>
+<div id="versionTag">v50</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -1655,12 +1655,13 @@ async function watchRewardedAd(){
       adAttemptToken=String(attempt.attempt_token||'');
       if(!adAttemptToken) throw new Error('Could not prepare the ad reward.');
     }
-    trackEvent('ad_view_started',{level:LI+1,deaths:state.deaths,context:ADSGRAM_DEBUG?'debug':'production'});
+    trackEvent('ad_view_started',{level:LI+1,deaths:state.deaths,context:ADSGRAM_DEBUG?'debug':'production',block_id:ADSGRAM_BLOCK_ID});
     adRewardStatus.textContent='Connecting to AdsGram…';
     const controller=await loadAdsgramController();
     adRewardStatus.textContent=ADSGRAM_DEBUG?'Requesting test ad…':'Requesting rewarded ad…';
     const result=await showAdsgramAd(controller);
     if(result&&result.done===false) throw new Error('The ad was not completed.');
+    trackEvent('ad_view_completed',{level:LI+1,deaths:state.deaths,context:ADSGRAM_DEBUG?'debug':'production',block_id:ADSGRAM_BLOCK_ID});
     adRewardStatus.textContent='Ad completed. Adding '+AD_REWARD_LIVES+' lives…';
     let progress=null;
     if(ADSGRAM_DEBUG){
@@ -2821,7 +2822,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v49-reliable-ad-rewards'
+    buildId:'v50-ad-terms-and-stats'
   };
 }
 })();

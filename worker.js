@@ -10,19 +10,22 @@ const REFERRAL_REWARD_LIVES = 5;
 const AD_REWARD_LIVES = 2;
 const AD_ATTEMPT_MIN_AGE = 2;
 const AD_ATTEMPT_MAX_AGE = 15 * 60;
-const TERMS_VERSION = 3;
-const TERMS_TEXT = `TRAP TERMS & REFUND POLICY (version 3)
+const TERMS_VERSION = 4;
+const TERMS_TEXT = `TRAP TERMS & REFUND POLICY (version 4)
 
 1. TRAP is a digital game. Life packs are digital goods sold only for Telegram Stars.
 2. Purchased lives are credited after Telegram confirms a successful payment. Unused purchased lives remain attached to your Telegram account.
 3. Launch-period refund policy: you may request a full refund through /paysupport. Refunds are processed by the bot operator. Telegram is not responsible for support or refunds.
 4. When a purchase is refunded, any unused lives from that purchase may be removed from your paid-life reserve. A refund can also be granted after lives were used, at the operator's discretion.
 5. Game progress, gameplay events, acquisition source, referral relationships, support messages, payment identifiers and refund records are stored against your Telegram user ID to operate and improve the game, attribute invitations, prevent duplicate rewards and provide support.
-6. Optional rewarded advertisements are supplied by AdsGram. AdsGram may process technical request data and your Telegram identifier to serve and account for an ad. A reward is granted only after AdsGram confirms a completed view. Availability is not guaranteed.
-7. Bonus lives earned from advertisements or referrals are spent after regular lives and before purchased lives.
-8. The service is provided as-is. Availability and game balance may change.
+6. Rewarded advertisements are optional and are offered only when no regular, bonus or purchased lives remain. You may restart or use another available continuation option without watching an advertisement.
+7. Advertisements are supplied by AdsGram. AdsGram may process your Telegram identifier, device and connection information, and advertisement interactions to select, deliver, measure and prevent abuse of advertisements. AdsGram's Privacy Policy applies: https://legal.adsgram.ai/privacy_current.pdf
+8. A completed and validated rewarded advertisement grants 2 bonus lives. Skipped, interrupted, unavailable, duplicated or invalid advertisement attempts do not grant lives. Advertisement availability and successful delivery are not guaranteed.
+9. Advertisements may open third-party content operated by advertisers. TRAP does not endorse or control that external content.
+10. Bonus lives earned from advertisements or referrals are spent after regular lives and before purchased lives.
+11. The service is provided as-is. Availability, advertisement providers, rewards and game balance may change.
 
-By purchasing a life pack, you confirm that you accept these terms. For general help use /support. For payment or refund help use /paysupport.`;
+By using TRAP, you agree to these terms. By purchasing a life pack, you also confirm acceptance before payment. For general help use /support. For payment or refund help use /paysupport.`;
 let schemaReady;
 
 const SCHEMA = [
@@ -813,7 +816,7 @@ function percentage(numerator, denominator) {
 
 async function adminStatsMessage(env) {
   const since = now() - 7 * 24 * 60 * 60;
-  const [players, events, activePlayers, payments, refunds, referrals, topReferrers] = await env.DB.batch([
+  const [players, events, activePlayers, payments, refunds, referrals, topReferrers, productionAdEvents, productionAdRewards] = await env.DB.batch([
     env.DB.prepare("SELECT COUNT(*) AS total FROM players"),
     env.DB.prepare(
       `SELECT event_name, COUNT(*) AS events, COUNT(DISTINCT user_id) AS users, SUM(value) AS value_total,
@@ -841,6 +844,25 @@ async function adminStatsMessage(env) {
        WHERE r.qualified_at IS NOT NULL
        GROUP BY r.referrer_user_id ORDER BY qualified DESC, r.referrer_user_id LIMIT 5`,
     ).bind(now() - 24 * 60 * 60),
+    env.DB.prepare(
+      `SELECT
+       SUM(CASE WHEN event_name='ad_view_started' THEN 1 ELSE 0 END) AS starts,
+       COUNT(DISTINCT CASE WHEN event_name='ad_view_started' THEN user_id END) AS start_users,
+       SUM(CASE WHEN event_name='ad_view_completed' THEN 1 ELSE 0 END) AS completed,
+       COUNT(DISTINCT CASE WHEN event_name='ad_view_completed' THEN user_id END) AS completed_users,
+       SUM(CASE WHEN event_name='ad_view_started' AND created_at>=? THEN 1 ELSE 0 END) AS starts_7d,
+       SUM(CASE WHEN event_name='ad_view_completed' AND created_at>=? THEN 1 ELSE 0 END) AS completed_7d
+       FROM analytics_events
+       WHERE event_name IN ('ad_view_started', 'ad_view_completed')
+         AND COALESCE(json_extract(metadata_json, '$.context'), '')='production'
+         AND (COALESCE(json_extract(metadata_json, '$.block_id'), '')='' OR json_extract(metadata_json, '$.block_id')=?)`,
+    ).bind(since, since, adsgramBlockId(env)),
+    env.DB.prepare(
+      `SELECT COUNT(*) AS rewards, COUNT(DISTINCT user_id) AS users, COALESCE(SUM(lives), 0) AS lives,
+       SUM(CASE WHEN granted_at>=? THEN 1 ELSE 0 END) AS rewards_7d,
+       COALESCE(SUM(CASE WHEN granted_at>=? THEN lives ELSE 0 END), 0) AS lives_7d
+       FROM ad_rewards WHERE block_id=? AND granted_at IS NOT NULL`,
+    ).bind(since, since, adsgramBlockId(env)),
   ]);
   const eventMap = Object.fromEntries((events.results || []).map((row) => [row.event_name, row]));
   const metric = (name) => ({
@@ -856,7 +878,6 @@ async function adminStatsMessage(env) {
   const completions = metric("game_complete");
   const shares = metric("share_sent");
   const rewardLives = metric("reward_granted");
-  const adRewards = metric("ad_reward_granted");
   const deaths = metric("death");
   const stores = metric("store_view");
   const invoices = metric("invoice_created");
@@ -864,6 +885,11 @@ async function adminStatsMessage(env) {
   const refundRow = refunds.results?.[0] || {};
   const referralRow = referrals.results?.[0] || {};
   const activeRow = activePlayers.results?.[0] || {};
+  const adEventRow = productionAdEvents.results?.[0] || {};
+  const adRewardRow = productionAdRewards.results?.[0] || {};
+  const adStarts = Number(adEventRow.starts || 0);
+  const adCompleted = Number(adEventRow.completed || 0);
+  const adGrants = Number(adRewardRow.rewards || 0);
   const top = (topReferrers.results || []).map((row, index) =>
     `${index + 1}. ${displayName(row)} — ${Number(row.qualified)} qualified (+${Number(row.qualified_24h || 0)} in 24h)`,
   ).join("\n") || "No qualified referrals yet.";
@@ -883,7 +909,14 @@ async function adminStatsMessage(env) {
     `Qualified referrals: ${Number(referralRow.qualified || 0)}\n` +
     `Rewarded referrals: ${Number(referralRow.rewarded || 0)}\n` +
     `Referral lives granted: ${rewardLives.value} to ${rewardLives.all} players\n` +
-    `Rewarded ads: ${adRewards.events} by ${adRewards.all} players · ${adRewards.value} lives granted\n\n` +
+    `\nADS · UNIT ${adsgramBlockId(env) || 'NOT CONFIGURED'}\n` +
+    `Started: ${adStarts} by ${Number(adEventRow.start_users || 0)} players (${Number(adEventRow.starts_7d || 0)} in 7d)\n` +
+    `Completed: ${adCompleted} by ${Number(adEventRow.completed_users || 0)} players (${Number(adEventRow.completed_7d || 0)} in 7d)\n` +
+    `Completion rate: ${percentage(adCompleted, adStarts)}\n` +
+    `Rewards granted: ${adGrants} to ${Number(adRewardRow.users || 0)} players (${Number(adRewardRow.rewards_7d || 0)} in 7d)\n` +
+    `Reward delivery: ${percentage(adGrants, adCompleted || adStarts)}\n` +
+    `Ad lives granted: ${Number(adRewardRow.lives || 0)} (${Number(adRewardRow.lives_7d || 0)} in 7d)\n` +
+    `Starts without reward: ${Math.max(0, adStarts - adGrants)}\n\n` +
     `Payments: ${Number(paymentRow.count || 0)} from ${Number(paymentRow.users || 0)} players · ${Number(paymentRow.stars || 0)} Stars\n` +
     `Refunds: ${Number(refundRow.count || 0)} · ${Number(refundRow.stars || 0)} Stars\n` +
     `Net Stars: ${Number(paymentRow.stars || 0) - Number(refundRow.stars || 0)}\n\n` +
@@ -1794,13 +1827,17 @@ async function handleApi(request, env, url) {
   }
   if (url.pathname === "/api/event" && request.method === "POST") {
     const eventName = String(body.event || "");
-    const allowedEvents = new Set(["game_start", "game_resume", "level_complete", "game_complete", "store_view", "share_sent", "ad_view_started"]);
+    const allowedEvents = new Set(["game_start", "game_resume", "level_complete", "game_complete", "store_view", "share_sent", "ad_view_started", "ad_view_completed"]);
     if (!allowedEvents.has(eventName)) return json({ ok: false, error: "invalid event" }, 400);
     const level = clampInt(body.level, 0, 10);
     const storedName = eventName === "level_complete" ? `level_complete_${clampInt(level, 1, 10, 1)}` : eventName;
     await recordAnalyticsEvent(env, userId, storedName, {
       level,
-      metadata: { deaths: clampInt(body.deaths, 0, 10_000_000), context: String(body.context || "").slice(0, 40) },
+      metadata: {
+        deaths: clampInt(body.deaths, 0, 10_000_000),
+        context: String(body.context || "").slice(0, 40),
+        block_id: eventName.startsWith("ad_view_") ? String(body.block_id || "").slice(0, 20) : "",
+      },
     });
     let reward = null;
     if (eventName === "level_complete" && level === 1) {
