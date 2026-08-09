@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v40</title>
+<title>TRAP: Ten Rooms · v41</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -294,7 +294,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v40</div>
+<div id="versionTag">v41</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -457,7 +457,23 @@ function playSound(name){
     soundTone(523,659,.13,'sine',.09); soundTone(659,988,.2,'triangle',.085,.1);
   }else if(name==='start'){
     soundTone(105,170,.16,'triangle',.07); soundTone(210,315,.14,'triangle',.06,.09);
+  }else if(name==='slabFall'){
+    soundNoise(.48,.07,420); soundTone(92,38,.52,'sawtooth',.075);
+  }else if(name==='slabImpact'){
+    soundNoise(.34,.18,310); soundTone(62,27,.3,'square',.14);
+  }else if(name==='projectile'){
+    soundNoise(.2,.045,1500); soundTone(560,145,.34,'sawtooth',.055);
+  }else if(name==='chase'){
+    soundTone(74,51,.13,'sine',.13); soundTone(62,43,.14,'sine',.11,.14);
+  }else if(name==='collapse'){
+    soundNoise(.4,.13,650); soundTone(145,52,.3,'sawtooth',.085);
   }
+}
+let lastCollapseSoundAt=-1000;
+function playCollapseSound(){
+  const now=performance.now();
+  if(now-lastCollapseSoundAt<180) return;
+  lastCollapseSoundAt=now; playSound('collapse');
 }
 function updateSoundToggle(){
   soundToggle.textContent=soundMuted?'🔇':'🔊';
@@ -657,7 +673,7 @@ const LEVELS=[
   update(dt,wasOnG){
     // яма росте: стрибати можна тільки від віхи
     if(wasOnG&&!p.onG&&p.x>26.2&&p.x<28.8&&!T.pit){
-      T.pit=true; T.pitAnim=0; carve(30,33);
+      T.pit=true; T.pitAnim=0; carve(30,33); playCollapseSound();
     }
     if(T.pit&&T.pitAnim<0.15) T.pitAnim+=dt;
     // плита
@@ -703,20 +719,20 @@ const LEVELS=[
     for(const x of this.ceiling) grid[8][x]=6;
   },
   onCeiling(){                       // вдарився головою над шипами
-    carve(23,26); state.shake=0.3;
+    carve(23,26); state.shake=0.3; playCollapseSound();
   },
   update(dt){
     // майданчик між двома ямами обвалюється під ногами
     const m=this.midZone;
     if(!T.mid&&p.onG&&p.x+PW>m[0]&&p.x<m[1]+1){
       T.midT=(T.midT||0)+dt;
-      if(T.midT>=0.35){ T.mid=true; carve(m[0],m[1]); state.shake=0.35; }
+      if(T.midT>=0.35){ T.mid=true; carve(m[0],m[1]); state.shake=0.35; playCollapseSound(); }
     }
     // підлога провалюється, якщо стояти на місці
     const z=this.standZone;
     if(!T.floor&&p.onG&&p.vx===0&&p.x+PW>z[0]&&p.x<z[1]+1){
       T.stand=(T.stand||0)+dt;
-      if(T.stand>=0.5){ T.floor=true; carve(z[0],z[1]); state.shake=0.35; }
+      if(T.stand>=0.5){ T.floor=true; carve(z[0],z[1]); state.shake=0.35; playCollapseSound(); }
     }else if(p.vx!==0||!p.onG) T.stand=0;
     // горизонтальна штука після схованої монетки
     const pr=state.proj;
@@ -813,6 +829,7 @@ const LEVELS=[
       if(T.ft>=0.65){
         T.fell=true; T.ft=0; state.shake=0.5;
         for(let x=11;x<=19;x++) grid[11][x]=0;
+        playCollapseSound();
       }
     }
     // петля: викидає в середину коридора, отвір лишається далеко позаду
@@ -822,6 +839,7 @@ const LEVELS=[
       if(!state.flags.gap){
         state.flags.gap=true;
         for(let x=27;x<=29;x++) grid[8][x]=0;
+        playCollapseSound();
       }
       state.saveMsg=1.3;
       state.saveTxt=T.loops<2?'AGAIN':(T.loops<3?'AGAIN.':'AGAIN...');
@@ -903,11 +921,11 @@ const LEVELS=[
   update(dt){
     if(!T.rotA&&p.onG&&p.x+PW>27&&p.x<29.2&&p.y<9.35){
       T.rotAT=(T.rotAT||0)+dt;
-      if(T.rotAT>.22){ T.rotA=true; carveRow(27,28,9); state.shake=.34; }
+      if(T.rotAT>.22){ T.rotA=true; carveRow(27,28,9); state.shake=.34; playCollapseSound(); }
     }else if(!T.rotA) T.rotAT=0;
     if(!T.rotB&&p.onG&&p.x+PW>45&&p.x<47.2&&p.y<9.35){
       T.rotBT=(T.rotBT||0)+dt;
-      if(T.rotBT>.2){ T.rotB=true; carveRow(45,46,9); state.shake=.34; }
+      if(T.rotBT>.2){ T.rotB=true; carveRow(45,46,9); state.shake=.34; playCollapseSound(); }
     }else if(!T.rotB) T.rotBT=0;
     if(!T.shot&&p.x>47){ T.shot=true; state.proj={x:58,y:9.8,vx:-10}; }
     const pr=state.proj;
@@ -969,7 +987,7 @@ const LEVELS=[
   update(dt){
     if(!T.altar&&p.onG&&p.x+PW>44&&p.x<46.4&&p.y<8.5){
       T.altarT=(T.altarT||0)+dt;
-      if(T.altarT>.18){ T.altar=true; carveRow(44,45,8); state.shake=.4; }
+      if(T.altarT>.18){ T.altar=true; carveRow(44,45,8); state.shake=.4; playCollapseSound(); }
     }else if(!T.altar) T.altarT=0;
 
     if(!T.bell&&p.x>40){
@@ -985,6 +1003,7 @@ const LEVELS=[
         grid[GROUND_Y+2][x]=7;
       }
       state.saveMsg=1.35; state.saveTxt='THE BRIDGE FELL BEHIND YOU'; state.shake=.42;
+      playCollapseSound();
       state.wall={x:37,y:-4,vy:14,landed:false,kind:'behind'};
     }
 
@@ -1008,7 +1027,7 @@ const LEVELS=[
     }
     if(!T.finishTrap&&p.onG&&p.x+PW>82&&p.x<84.7){
       T.finishT=(T.finishT||0)+dt;
-      if(T.finishT>.34){ T.finishTrap=true; carve(82,84); state.shake=.42; }
+      if(T.finishT>.34){ T.finishTrap=true; carve(82,84); state.shake=.42; playCollapseSound(); }
     }else if(!T.finishTrap) T.finishT=0;
 
     const pr=state.proj;
@@ -1048,11 +1067,11 @@ const LEVELS=[
   update(dt){
     if(!T.sickBed&&p.onG&&p.x+PW>58&&p.x<61.8){
       T.sickT=(T.sickT||0)+dt;
-      if(T.sickT>.24){ T.sickBed=true; carve(58,61); state.shake=.42; }
+      if(T.sickT>.24){ T.sickBed=true; carve(58,61); state.shake=.42; playCollapseSound(); }
     }else if(!T.sickBed) T.sickT=0;
     if(!T.bridgeFall&&p.onG&&p.x+PW>87&&p.x<89.4&&p.y<9.35){
       T.bridgeT=(T.bridgeT||0)+dt;
-      if(T.bridgeT>.18){ T.bridgeFall=true; carveRow(87,88,9); state.shake=.36; }
+      if(T.bridgeT>.18){ T.bridgeFall=true; carveRow(87,88,9); state.shake=.36; playCollapseSound(); }
     }else if(!T.bridgeFall) T.bridgeT=0;
     if(p.x>18){
       T.dark=(T.dark||0)+dt;
@@ -1094,7 +1113,7 @@ const LEVELS=[
   update(dt){
     if(!T.falseAltar&&p.onG&&p.x+PW>48&&p.x<50.8&&p.y<8.45){
       T.falseAltarT=(T.falseAltarT||0)+dt;
-      if(T.falseAltarT>.16){ T.falseAltar=true; carveRow(48,50,8); state.shake=.38; }
+      if(T.falseAltarT>.16){ T.falseAltar=true; carveRow(48,50,8); state.shake=.38; playCollapseSound(); }
     }else if(!T.falseAltar) T.falseAltarT=0;
 
     if(!T.l8BridgeGone) T.l8BridgeGone=new Set();
@@ -1124,17 +1143,18 @@ const LEVELS=[
           grid[GROUND_Y+2][x]=7;
         }
         state.saveMsg=1.05; state.saveTxt='THE BRIDGE FELL BEHIND YOU'; state.shake=.28;
+        playCollapseSound();
       }
     }
 
     if(!T.shaftDoor&&p.x>63){ T.shaftDoor=true; for(let y=9;y<=10;y++) for(let x=52;x<=53;x++) grid[y][x]=4; }
     if(!T.lastShelf&&p.onG&&p.x+PW>85&&p.x<88.4&&p.y<9.35){
       T.lastShelfT=(T.lastShelfT||0)+dt;
-      if(T.lastShelfT>.2){ T.lastShelf=true; carveRow(85,87,9); state.shake=.4; }
+      if(T.lastShelfT>.2){ T.lastShelf=true; carveRow(85,87,9); state.shake=.4; playCollapseSound(); }
     }else if(!T.lastShelf) T.lastShelfT=0;
     if(!T.break&&p.onG&&p.x>90){
       T.bt=(T.bt||0)+dt;
-      if(T.bt>.42){T.break=true;carve(90,92);state.shake=.45;}
+      if(T.bt>.42){T.break=true;carve(90,92);state.shake=.45;playCollapseSound();}
     }
   },
   onFlag(){
@@ -1161,7 +1181,7 @@ const LEVELS=[
   update(dt){
     if(!T.snap1&&p.onG&&p.x+PW>33&&p.x<35.2&&p.y<9.35){
       T.snap1T=(T.snap1T||0)+dt;
-      if(T.snap1T>.16){ T.snap1=true; carveRow(33,34,9); state.shake=.35; }
+      if(T.snap1T>.16){ T.snap1=true; carveRow(33,34,9); state.shake=.35; playCollapseSound(); }
     }else if(!T.snap1) T.snap1T=0;
     if(!T.hunt&&p.x>10){T.hunt=true;T.edge=p.x-10;state.saveMsg=1.4;state.saveTxt='DO NOT LOOK BACK';}
     if(T.hunt){
@@ -1171,7 +1191,7 @@ const LEVELS=[
     if(!T.ambush&&p.x>74){ T.ambush=true; state.proj={x:86,y:8.8,vx:-13}; }
     if(!T.finishBreak&&p.onG&&p.x+PW>105&&p.x<107.4){
       T.finishBreakT=(T.finishBreakT||0)+dt;
-      if(T.finishBreakT>.22){ T.finishBreak=true; carve(105,106); state.shake=.42; }
+      if(T.finishBreakT>.22){ T.finishBreak=true; carve(105,106); state.shake=.42; playCollapseSound(); }
     }else if(!T.finishBreak) T.finishBreakT=0;
     const pr=state.proj;
     if(pr){ pr.x+=pr.vx*dt;
@@ -1215,12 +1235,12 @@ const LEVELS=[
     // v16: платформа біля монетки не зникає під ногами.
     // Вона обвалюється лише після того, як герой уже дістався правого берега.
     if(!T.collapseA&&p.x>54.35){
-      T.collapseA=true; carveRow(50,53,9); state.shake=.42;
+      T.collapseA=true; carveRow(50,53,9); state.shake=.42; playCollapseSound();
       state.saveMsg=.9; state.saveTxt='THE WAY BACK IS GONE';
     }
     if(!T.collapseB&&p.onG&&p.x+PW>92&&p.x<95.8&&p.y<8.45){
       T.collapseBT=(T.collapseBT||0)+dt;
-      if(T.collapseBT>.2){ T.collapseB=true; carveRow(92,94,8); state.shake=.42; }
+      if(T.collapseBT>.2){ T.collapseB=true; carveRow(92,94,8); state.shake=.42; playCollapseSound(); }
     }else if(!T.collapseB) T.collapseBT=0;
     if(p.x>16&&p.x<115){
       T.ritual=true; T.dropT=(T.dropT||1.8)-dt;
@@ -1285,6 +1305,41 @@ const state={
   deathFx:[], bloodFx:[], dead:0, won:false, running:false, shake:0, flash:0, saveMsg:0, saveTxt:'', rejectMsg:0, flags:{}, revealed:new Set()
 };
 const p={x:1,y:GROUND_Y-PH,vx:0,vy:0,onG:false,coyote:0,buf:0,face:1,anim:0,airVx:0,touchJump:false};
+const hazardAudio={wall:null,wallLanded:false,projectile:null,bossShots:new WeakSet(),chaseTimer:0};
+
+function resetHazardAudio(){
+  hazardAudio.wall=null; hazardAudio.wallLanded=false; hazardAudio.projectile=null;
+  hazardAudio.bossShots=new WeakSet(); hazardAudio.chaseTimer=0;
+}
+function updateHazardAudio(dt){
+  const wall=state.wall;
+  if(wall!==hazardAudio.wall){
+    hazardAudio.wall=wall; hazardAudio.wallLanded=Boolean(wall&&wall.landed);
+    if(wall&&!wall.landed) playSound('slabFall');
+  }else if(wall&&!hazardAudio.wallLanded&&wall.landed){
+    hazardAudio.wallLanded=true; playSound('slabImpact');
+  }
+
+  if(state.proj!==hazardAudio.projectile){
+    hazardAudio.projectile=state.proj;
+    if(state.proj) playSound('projectile');
+  }
+  for(const shot of state.bossShots){
+    if(hazardAudio.bossShots.has(shot)) continue;
+    hazardAudio.bossShots.add(shot); playSound('projectile');
+  }
+
+  let chaseDistance=null;
+  if(LI===3&&T.phase===2) chaseDistance=T.edge-(p.x+PW);
+  else if(LI===8&&T.hunt) chaseDistance=p.x-T.edge;
+  if(chaseDistance!==null){
+    hazardAudio.chaseTimer-=dt;
+    if(hazardAudio.chaseTimer<=0){
+      playSound('chase');
+      hazardAudio.chaseTimer=Math.max(.22,Math.min(.9,.22+Math.max(0,chaseDistance)*.055));
+    }
+  }else hazardAudio.chaseTimer=0;
+}
 
 function updateLives(){
   lnum.textContent=BETA_TEST_MODE&&!SHOW_TEST_LIFE_BALANCE?'∞':state.lives;
@@ -1344,6 +1399,7 @@ function resetLife(){
     grid[8][L.hidden.x]=2;
   }
   state.coinFx=null; state.blockBumps=[]; state.weight=null; state.wall=null; state.proj=null; state.bossShots=[]; state.crumb=[];
+  resetHazardAudio();
   state.deathFx=[]; state.bloodFx=[];
   state.dead=0; state.won=false; state.gameOverPending=false; state.saveMsg=0; state.rejectMsg=0; state.flagLock=false;
   p.x=L.checks[state.cp]; p.y=GROUND_Y-PH;
@@ -2244,12 +2300,13 @@ function step(dt){
   if(p.onG&&p.vx!==0) p.anim+=dt; else if(p.onG) p.anim=0;
 
   if(L.update) L.update.call(L,dt,wasOnG);
+  updateHazardAudio(dt);
   enforceLevel6SafeBridge();
 
   // крихкі платформи
   for(let i=state.crumb.length-1;i>=0;i--){
     const c=state.crumb[i]; c.t-=dt;
-    if(c.t<=0){ grid[c.y][c.x]=0; state.crumb.splice(i,1); }
+    if(c.t<=0){ grid[c.y][c.x]=0; state.crumb.splice(i,1); playCollapseSound(); }
   }
 
   // чекпоінти
@@ -2635,7 +2692,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v40-block-hit-feedback'
+    buildId:'v41-hazard-sfx'
   };
 }
 })();
