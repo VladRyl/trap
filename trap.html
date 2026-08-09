@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v19</title>
+<title>TRAP: Ten Rooms · v39</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -44,6 +44,12 @@
   #deaths{color:#8d3838} #lives{color:var(--blood-bright)}
   #paidnum{display:block;min-height:8px;margin-top:4px;color:var(--gold);font-family:"Helvetica Neue",Arial,sans-serif;
            font-size:7px;line-height:1;letter-spacing:.08em;text-shadow:none;white-space:nowrap}
+  #hudActions{display:flex;align-items:flex-start;gap:4px}
+  #soundToggle{appearance:none;border:1px solid #49373e;background:linear-gradient(180deg,#171219,#090a0e);
+               color:var(--bone-dim);width:34px;height:42px;padding:0;cursor:pointer;touch-action:manipulation;
+               font-size:15px;line-height:1;font-weight:900;box-shadow:0 5px 14px rgba(0,0,0,.32)}
+  #soundToggle:active{transform:translateY(1px);border-color:var(--gold)}
+  #soundToggle.muted{color:#5c5552;border-color:#382e33}
   #scoreHudBtn{appearance:none;border:1px solid #49373e;background:linear-gradient(180deg,#171219,#090a0e);
                color:var(--gold);min-width:48px;height:42px;padding:4px 6px;cursor:pointer;touch-action:manipulation;
                font-weight:900;box-shadow:0 5px 14px rgba(0,0,0,.32)}
@@ -190,7 +196,7 @@
                  font-weight:900;letter-spacing:.15em;cursor:pointer;touch-action:manipulation}
   #versionTag{position:fixed;right:10px;bottom:8px;z-index:25;font-size:10px;letter-spacing:.18em;
     color:rgba(230,223,207,.38);font-weight:700;pointer-events:none;text-transform:lowercase;text-shadow:0 1px 2px #000}
-  @media(max-width:390px){#hud{padding-left:7px;padding-right:7px;gap:4px}.cnt{font-size:23px}#lvl{font-size:8px}#scoreHudBtn{min-width:42px;padding:3px}}
+  @media(max-width:390px){#hud{padding-left:7px;padding-right:7px;gap:4px}.cnt{font-size:23px}#lvl{font-size:8px}#soundToggle{width:30px}#scoreHudBtn{min-width:42px;padding:3px}}
   @media(max-height:700px){#overlay{justify-content:flex-start;overflow-y:auto;padding-top:24px;padding-bottom:24px}}
 </style>
 </head>
@@ -201,7 +207,10 @@
   <div class="cnt" id="coins"><small>COINS</small><span id="cnum">0</span><span id="creq">/?</span></div>
   <div class="cnt" id="lives"><small>LIVES</small><span id="lnum">3</span><span id="paidnum"></span></div>
   <div class="cnt" id="deaths"><small>DEATHS</small><span id="dnum">0</span></div>
-  <button id="scoreHudBtn" class="scoreControl" type="button" aria-label="Open scores"><span>🏆</span><small>SCORES</small></button>
+  <div id="hudActions">
+    <button id="soundToggle" type="button" aria-label="Mute sound" title="Mute sound">🔊</button>
+    <button id="scoreHudBtn" class="scoreControl" type="button" aria-label="Open scores"><span>🏆</span><small>SCORES</small></button>
+  </div>
 </div>
 
 <div id="stage"><canvas id="c"></canvas></div>
@@ -285,7 +294,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v38</div>
+<div id="versionTag">v39</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -303,6 +312,7 @@ const ADSGRAM_TEST_USER_ID=Number(RUNTIME_CONFIG.adsgramTestUserId)||0;
 const ADSGRAM_SDK_URL='https://sad.adsgram.ai/js/sad.min.js';
 const ADSGRAM_SDK_TIMEOUT=10000;
 const ADSGRAM_START_TIMEOUT=15000;
+const SOUND_PREF_KEY='trap_sound_muted_v1';
 
 // ===== BETA TEST =====
 // true  = нескінченні життя для тестування
@@ -365,6 +375,7 @@ const scoresShare=document.getElementById('scoresShare');
 const scoresList=document.getElementById('scoresList');
 const scoresStatus=document.getElementById('scoresStatus');
 const myScore=document.getElementById('myScore');
+const soundToggle=document.getElementById('soundToggle');
 let scoresWasRunning=false;
 let resumeProgress=null;
 let remotePaymentVersion=0;
@@ -378,6 +389,97 @@ let lastStoreViewKey='';
 let adsgramSdkPromise=null;
 let adsgramController=null;
 let adRewardInFlight=false;
+
+/* ================= звук ================= */
+let soundMuted=false;
+try{ soundMuted=localStorage.getItem(SOUND_PREF_KEY)==='1'; }catch(_){ }
+let audioCtx=null, masterGain=null, noiseBuffer=null, soundToggleAt=-1000;
+
+function ensureAudio(){
+  if(audioCtx) return audioCtx;
+  const AudioContextClass=window.AudioContext||window.webkitAudioContext;
+  if(!AudioContextClass) return null;
+  try{
+    audioCtx=new AudioContextClass();
+    masterGain=audioCtx.createGain();
+    masterGain.gain.value=soundMuted?0:.22;
+    masterGain.connect(audioCtx.destination);
+    return audioCtx;
+  }catch(_){ return null; }
+}
+function unlockAudio(){
+  if(soundMuted) return;
+  const ac=ensureAudio();
+  if(ac&&ac.state==='suspended') ac.resume().catch(()=>{});
+}
+function soundTone(freq,endFreq,duration,type='sine',volume=.1,delay=0){
+  if(soundMuted) return;
+  const ac=ensureAudio(); if(!ac||!masterGain) return;
+  const start=ac.currentTime+Math.max(0,delay), stop=start+Math.max(.025,duration);
+  const osc=ac.createOscillator(), gain=ac.createGain();
+  osc.type=type; osc.frequency.setValueAtTime(Math.max(20,freq),start);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(20,endFreq||freq),stop);
+  gain.gain.setValueAtTime(.0001,start);
+  gain.gain.exponentialRampToValueAtTime(Math.max(.0001,volume),start+.008);
+  gain.gain.exponentialRampToValueAtTime(.0001,stop);
+  osc.connect(gain); gain.connect(masterGain); osc.start(start); osc.stop(stop+.02);
+}
+function soundNoise(duration=.25,volume=.08,cutoff=900){
+  if(soundMuted) return;
+  const ac=ensureAudio(); if(!ac||!masterGain) return;
+  if(!noiseBuffer){
+    noiseBuffer=ac.createBuffer(1,Math.ceil(ac.sampleRate*.6),ac.sampleRate);
+    const data=noiseBuffer.getChannelData(0); for(let i=0;i<data.length;i++) data[i]=Math.random()*2-1;
+  }
+  const source=ac.createBufferSource(), filter=ac.createBiquadFilter(), gain=ac.createGain(), now=ac.currentTime;
+  source.buffer=noiseBuffer; filter.type='lowpass'; filter.frequency.value=cutoff;
+  gain.gain.setValueAtTime(Math.max(.0001,volume),now); gain.gain.exponentialRampToValueAtTime(.0001,now+duration);
+  source.connect(filter); filter.connect(gain); gain.connect(masterGain); source.start(now); source.stop(now+duration+.02);
+}
+function playSound(name){
+  if(soundMuted) return;
+  unlockAudio();
+  if(name==='jump') soundTone(135,285,.11,'square',.07);
+  else if(name==='coin'){
+    soundTone(620,900,.09,'sine',.11); soundTone(930,1320,.12,'triangle',.075,.065);
+  }else if(name==='death'){
+    soundNoise(.36,.14,720); soundTone(125,38,.44,'sawtooth',.15);
+  }else if(name==='checkpoint'){
+    soundTone(330,440,.11,'triangle',.08); soundTone(494,660,.16,'triangle',.09,.09);
+  }else if(name==='clear'){
+    soundTone(330,440,.18,'triangle',.09); soundTone(494,660,.2,'triangle',.09,.12); soundTone(660,990,.3,'sine',.085,.25);
+  }else if(name==='complete'){
+    [262,330,392,523].forEach((frequency,index)=>soundTone(frequency,frequency*1.12,.34,'triangle',.085,index*.11));
+  }else if(name==='reject') soundTone(115,72,.2,'square',.09);
+  else if(name==='hit'){
+    soundNoise(.09,.07,520); soundTone(92,58,.12,'square',.08);
+  }else if(name==='reward'){
+    soundTone(523,659,.13,'sine',.09); soundTone(659,988,.2,'triangle',.085,.1);
+  }else if(name==='start'){
+    soundTone(105,170,.16,'triangle',.07); soundTone(210,315,.14,'triangle',.06,.09);
+  }
+}
+function updateSoundToggle(){
+  soundToggle.textContent=soundMuted?'🔇':'🔊';
+  soundToggle.classList.toggle('muted',soundMuted);
+  soundToggle.setAttribute('aria-label',soundMuted?'Enable sound':'Mute sound');
+  soundToggle.title=soundMuted?'Enable sound':'Mute sound';
+}
+function toggleSound(e){
+  if(e){ e.preventDefault(); e.stopPropagation(); }
+  const now=performance.now(); if(now-soundToggleAt<220) return; soundToggleAt=now;
+  soundMuted=!soundMuted;
+  try{ localStorage.setItem(SOUND_PREF_KEY,soundMuted?'1':'0'); }catch(_){ }
+  if(masterGain) masterGain.gain.setValueAtTime(soundMuted?0:.22,audioCtx.currentTime);
+  updateSoundToggle();
+  if(!soundMuted) playSound('start');
+}
+soundToggle.addEventListener('click',toggleSound);
+soundToggle.addEventListener('touchend',toggleSound,{passive:false});
+document.addEventListener('pointerdown',unlockAudio,{once:true,capture:true});
+document.addEventListener('touchstart',unlockAudio,{once:true,capture:true,passive:true});
+document.addEventListener('keydown',unlockAudio,{once:true,capture:true});
+updateSoundToggle();
 let adRewardNeedsReload=false;
 function setBetaPickerVisible(visible){
   if(!BETA_TEST_MODE) return;
@@ -1379,6 +1481,7 @@ function resumeAfterAdReward(progress){
   setAdRewardVisible(false); setShareVisible(false); setLifeStoreVisible(false);
   ov.classList.add('hidden'); state.running=true; state.won=false; state.gameOverPending=false; last=0; acc=0;
   state.saveMsg=1.8; state.saveTxt='AD REWARD +'+AD_REWARD_LIVES+' LIVES';
+  playSound('reward');
   return true;
 }
 async function waitForProductionAdReward(){
@@ -1948,6 +2051,7 @@ function unstick(){
 function giveCoin(id){
   if(state.got.has(id)) return;
   state.got.add(id); state.coins++;
+  playSound('coin');
   cnum.textContent=state.coins;
   cbox.classList.add('bump'); setTimeout(()=>cbox.classList.remove('bump'),100);
 }
@@ -1962,6 +2066,7 @@ function hitBlock(tx,ty){
     state.coinFx={x:tx+0.5,y:ty-0.2,life:0.8}; giveCoin(L.hidden.id);
     if(L.onHiddenCoin) L.onHiddenCoin.call(L);
   }else{
+    playSound('hit');
     state.weight={delay:0.40,x:0,y:-2,vy:0,live:false};
   }
 }
@@ -1994,6 +2099,7 @@ function hitBossRune(tx,ty){
   if(!b||b.dead){ grid[ty][tx]=2; return; }
   if(b.runeT>0){ grid[ty][tx]=2; return; }
   b.hp=Math.max(0,b.hp-1); b.runeT=.75; b.hitT=.28;
+  playSound(b.hp<=0?'complete':'hit');
   state.shake=.68; state.flash=.16; state.saveMsg=.85; state.saveTxt=b.hp?'WARDEN '+b.hp+' / '+b.max:'THE WARDEN FALLS';
   for(let i=0;i<18;i++) state.deathFx.push({x:b.x,y:b.y,vx:(Math.random()-.5)*10,vy:(Math.random()-.5)*8,life:.5+Math.random()*.5,max:1,r:.04+Math.random()*.08,red:true});
   if(b.hp<=0){
@@ -2003,6 +2109,7 @@ function hitBossRune(tx,ty){
 }
 function die(){
   if(state.dead>0||state.won) return;
+  playSound('death');
   spawnDeathFx();
   state.dead=0.88; state.deaths++;
   if(!BETA_TEST_MODE){
@@ -2023,6 +2130,7 @@ function tryFlag(){
   if(L.onFlag&&L.onFlag.call(L)) return;
   if(!state.reqKnown){ state.reqKnown=true; creq.textContent='/'+state.req; }
   if(state.coins>=state.req){ win(); return; }
+  playSound('reject');
   state.rejectMsg=2.6; state.shake=0.4;
   if(L.hidden&&!state.hiddenOn){ state.hiddenOn=true; grid[8][L.hidden.x]=2; }
   if(L.rejectToStart){
@@ -2048,6 +2156,7 @@ function gameOver(){
 function win(){
   state.won=true; state.running=false;
   const last=LI>=LEVELS.length-1;
+  playSound(last?'complete':'clear');
   const completedLevel=LI+1;
   const completedDeaths=state.deaths;
   let bonus='';
@@ -2088,6 +2197,7 @@ function applyReferralReward(reward){
   const progress=reward&&reward.referredProgress;
   if(!amount||!progress) return;
   state.rewardLives=Math.max(state.rewardLives,Number(progress.rewardLives)||0);
+  playSound('reward');
   remotePaymentVersion=Math.max(remotePaymentVersion,Number(reward.referredPaymentVersion)||0);
   localSave(progress); updateLives();
   if(state.won) ovS.insertAdjacentHTML('beforeend','<br><b style="color:var(--gold)">+'+amount+' REFERRAL LIVES</b><br><span style="color:var(--bone-dim)">YOU AND YOUR INVITER WERE REWARDED</span>');
@@ -2116,6 +2226,7 @@ function step(dt){
   if(p.coyote>0) p.coyote-=dt;
   if(p.buf>0&&(p.onG||p.coyote>0)){
     // Стрибок завжди вертикальний. Горизонталь задається тільки LEFT/RIGHT.
+    playSound('jump');
     p.vy=-JUMP_V; p.onG=false; p.coyote=0; p.buf=0; p.airVx=p.vx;
   }
 
@@ -2140,6 +2251,7 @@ function step(dt){
   for(let i=L.checks.length-1;i>=0;i--){
     if(p.x>=L.checks[i]&&i>state.cp){
       state.cp=i; state.saveMsg=1.1; state.saveTxt='SAVED';
+      playSound('checkpoint');
       queueSave('playing'); submitScore(LI+1); break;
     }
   }
@@ -2449,6 +2561,7 @@ function go(){
     const selectedLevel=BETA_TEST_MODE?Math.max(0,Math.min(LEVELS.length-1,Number(betaLevelSelect.value)||0)):0;
     loadLevel(selectedLevel); STATE_READY_FOR_WRITES=true; queueSave('level_start',true); submitScore(selectedLevel+1);
   }
+  playSound('start');
   if(act==='resume') trackEvent('game_resume',{level:LI+1,deaths:state.deaths});
   else if(act!=='next') trackEvent('game_start',{level:LI+1,deaths:state.deaths});
   setShareVisible(false);
@@ -2507,7 +2620,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v38-adsgram-network-timeout'
+    buildId:'v39-web-audio-sfx'
   };
 }
 })();
