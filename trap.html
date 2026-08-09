@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>TRAP: Ten Rooms · v39</title>
+<title>TRAP: Ten Rooms · v40</title>
 <script id="trap-runtime-config">window.__TRAP_CONFIG__={};</script>
 <script id="adsgram-sdk" async src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
@@ -294,7 +294,7 @@
     </div>
   </div>
 </div>
-<div id="versionTag">v39</div>
+<div id="versionTag">v40</div>
 
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <script>
@@ -505,7 +505,9 @@ function roundedRect(g,x,y,w,h,r){
   g.closePath();
 }
 function drawHeroAsset(g,w,h,pose){
-  const u=Math.min(w/24,h/42);
+  // The collision box is intentionally tall. Fit the visible hero to that box too,
+  // so the hood actually reaches a ceiling block when the physics collision fires.
+  const u=Math.min(w/18.5,h/33);
   const cx=w*.5;
   const bob=(pose.bob||0)*u;
   const leg=(pose.leg||0);
@@ -599,7 +601,9 @@ function drawHeroAsset(g,w,h,pose){
   g.restore();
 }
 function buildSprites(){
-  const w=Math.max(22,Math.round(PW*TS*DPR*1.9)), h=Math.max(46,Math.round(PH*TS*DPR*1.9));
+  // A slightly wider source canvas lets the hero use the full collision-box
+  // height without clipping the arms or lantern; it is scaled back to PW × PH.
+  const w=Math.max(22,Math.round(PW*TS*DPR*2.5)), h=Math.max(46,Math.round(PH*TS*DPR*1.9));
   const poses={
     idle1:{bob:0,leg:0,arm:.15,tilt:-.01,hood:0,lantern:-.12,glow:.22},
     idle2:{bob:.35,leg:.05,arm:-.08,tilt:.01,hood:.18,lantern:.18,glow:.26},
@@ -1277,7 +1281,7 @@ let LI=0, L=LEVELS[0], T={};
 const state={
   deaths:0, lives:3, rewardLives:0, paidLives:0, bonusLives:new Set(), gameOverPending:false, cp:0, coins:0, req:1, reqKnown:false, got:new Set(),
   hiddenOn:false, flagLock:false,
-  coinFx:null, weight:null, wall:null, proj:null, bossShots:[], crumb:[],
+  coinFx:null, blockBumps:[], weight:null, wall:null, proj:null, bossShots:[], crumb:[],
   deathFx:[], bloodFx:[], dead:0, won:false, running:false, shake:0, flash:0, saveMsg:0, saveTxt:'', rejectMsg:0, flags:{}, revealed:new Set()
 };
 const p={x:1,y:GROUND_Y-PH,vx:0,vy:0,onG:false,coyote:0,buf:0,face:1,anim:0,airVx:0,touchJump:false};
@@ -1339,7 +1343,7 @@ function resetLife(){
     cnum.textContent=state.coins;
     grid[8][L.hidden.x]=2;
   }
-  state.coinFx=null; state.weight=null; state.wall=null; state.proj=null; state.bossShots=[]; state.crumb=[];
+  state.coinFx=null; state.blockBumps=[]; state.weight=null; state.wall=null; state.proj=null; state.bossShots=[]; state.crumb=[];
   state.deathFx=[]; state.bloodFx=[];
   state.dead=0; state.won=false; state.gameOverPending=false; state.saveMsg=0; state.rejectMsg=0; state.flagLock=false;
   p.x=L.checks[state.cp]; p.y=GROUND_Y-PH;
@@ -2056,6 +2060,7 @@ function giveCoin(id){
   cbox.classList.add('bump'); setTimeout(()=>cbox.classList.remove('bump'),100);
 }
 function hitBlock(tx,ty){
+  state.blockBumps.push({x:tx,y:ty,t:.22,max:.22});
   grid[ty][tx]=3;
   const b=L.blocks.find(b=>b.x===tx&&(b.row||8)===ty);
   if(b&&b.kind==='coin'){
@@ -2262,6 +2267,13 @@ function step(dt){
     if(state.coinFx.life<=0) state.coinFx=null;
   }
 
+  // A short visual-only question-block bump. Collision stays on the grid,
+  // so moving the sprite cannot push or trap the player.
+  for(let i=state.blockBumps.length-1;i>=0;i--){
+    const bump=state.blockBumps[i]; bump.t-=dt;
+    if(bump.t<=0) state.blockBumps.splice(i,1);
+  }
+
   // гиря
   const w=state.weight;
   if(w){
@@ -2407,7 +2419,10 @@ function render(){
   for(let tx=t0;tx<t1;tx++) for(let ty=0;ty<FH;ty++){
     const v=grid[ty][tx]; if(!v) continue;
     if(v===6&&!state.revealed.has(tx+':'+ty)) continue;
-    const px=X(tx), py=Y(ty);
+    const px=X(tx);
+    const bump=state.blockBumps.find(item=>item.x===tx&&item.y===ty);
+    const bumpProgress=bump?1-bump.t/bump.max:0;
+    const py=Y(ty)-(bump?Math.sin(Math.PI*bumpProgress)*TS*.16:0);
     if(v===8){
       ctx.save();
       ctx.globalAlpha=.72;
@@ -2620,7 +2635,7 @@ if(BETA_TEST_MODE){
     holdLeft(on=true){ keys.l=!!on; if(on) keys.r=false; },
     jump(){ p.buf=BUFFER; },
     tick(frames=1){ for(let i=0;i<frames;i++) step(FIXED); },
-    buildId:'v39-web-audio-sfx'
+    buildId:'v40-block-hit-feedback'
   };
 }
 })();
