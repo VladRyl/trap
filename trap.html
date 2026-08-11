@@ -725,14 +725,18 @@ const LEVELS=[
   build(){
     blank(this.width); fillGround(this.width);
     carve(8,9);        // чесна яма 2
-    carve(28,29);      // така сама на вигляд — але вона виросте
   },
-  update(dt,wasOnG){
-    // яма росте: стрибати можна тільки від віхи
-    if(wasOnG&&!p.onG&&p.x>26.2&&p.x<28.8&&!T.pit){
-      T.pit=true; T.pitAnim=0; carve(30,33); playCollapseSound();
+  update(dt){
+    // Одна знайома кругла пастка замість складного обриву.
+    if(state.cp<3&&!T.shot&&p.x>25.2){
+      T.shot=true; state.proj={x:35.5,y:9.7,vx:-8.2};
     }
-    if(T.pit&&T.pitAnim<0.15) T.pitAnim+=dt;
+    const pr=state.proj;
+    if(pr){
+      pr.x+=pr.vx*dt;
+      if(p.x+PW>pr.x&&p.x<pr.x+1&&p.y+PH>pr.y&&p.y<pr.y+.8) die();
+      if(pr.x<-2||pr.x<p.x-12) state.proj=null;
+    }
     // плита
     if(p.x>=37.4&&!T.wall){ T.wall=true; state.wall={x:39,y:-3,vy:48,landed:false}; }
     const wl=state.wall;
@@ -747,12 +751,11 @@ const LEVELS=[
     }
   },
   drawBack(){
-    if(T.pit&&T.pitAnim<0.15){
-      const x0=30+4*(T.pitAnim/0.15);
-      drawGround(X(x0),Y(GROUND_Y),(34-x0)*TS,(FH-GROUND_Y)*TS);
-    }
     const wl=state.wall;
     if(wl&&!wl.landed) drawGround(X(wl.x),Y(wl.y),TS*6,TS*2);
+  },
+  drawFront(){
+    drawProjectile();
   }
 },
 {
@@ -768,8 +771,7 @@ const LEVELS=[
   rejectToStart:false,
   build(){
     blank(this.width); fillGround(this.width);
-    carve(10,13);      // яма A — чесна 4
-    carve(17,18);      // яма B
+    carve(10,11);      // виглядає короткою, але розкривається під час стрибка
     carve(44,51);      // фінальна яма 8 — не перестрибнути
     grid[11][48]=5;    // камінь «туди»
     grid[12][47]=5;    // камінь «назад», нижче на тайл
@@ -778,7 +780,12 @@ const LEVELS=[
   onCeiling(){                       // вдарився головою над шипами
     carve(23,26); state.shake=0.3; playCollapseSound();
   },
-  update(dt){
+  update(dt,wasOnG){
+    // Пастка зі старого Level 1 тепер відкриває Level 2.
+    if(wasOnG&&!p.onG&&p.x>8.2&&p.x<10.8&&!T.pit){
+      T.pit=true; T.pitAnim=0; carve(12,15); playCollapseSound();
+    }
+    if(T.pit&&T.pitAnim<.15) T.pitAnim+=dt;
     // майданчик між двома ямами обвалюється під ногами
     const m=this.midZone;
     if(!T.mid&&p.onG&&p.x+PW>m[0]&&p.x<m[1]+1){
@@ -828,6 +835,10 @@ const LEVELS=[
     state.saveMsg=1.8; state.saveTxt='THE STONE IS BACK';
   },
   drawBack(){
+    if(T.pit&&T.pitAnim<.15){
+      const x0=12+4*(T.pitAnim/.15);
+      drawGround(X(x0),Y(GROUND_Y),(16-x0)*TS,(FH-GROUND_Y)*TS);
+    }
     for(const d of this.deco){       // декоративна плита-обманка
       ctx.globalAlpha=0.5; drawGround(X(d.x),Y(d.y),d.w*TS,d.h*TS); ctx.globalAlpha=1;
     }
@@ -848,11 +859,7 @@ const LEVELS=[
       }
     }
     const pr=state.proj;
-    if(pr){
-      ctx.fillStyle='#DED6C4'; ctx.fillRect(X(pr.x),Y(pr.y),TS,TS);
-      ctx.fillStyle='#0E1319';
-      ctx.fillRect(X(pr.x)+TS*0.15,Y(pr.y)+TS*0.4,TS*0.7,TS*0.2);
-    }
+    if(pr) drawProjectile();
   }
 },
 {
@@ -952,6 +959,18 @@ const LEVELS=[
     if(T.phase!==2) return;
     T.edge-=4.86*dt;                                // 68 тайлів за 14 секунд
     while(T.edgeTile>T.edge&&T.edgeTile>=0){ carve(T.edgeTile,T.edgeTile); T.edgeTile--; }
+    // Дві легкі зустрічні пастки під час повернення. Обидві можна перестрибнути.
+    if(!T.backShotA&&p.x<51){
+      T.backShotA=true; state.proj={x:Math.max(2,p.x-7),y:9.7,vx:5.4};
+    }else if(!T.backShotB&&p.x<28&&!state.proj){
+      T.backShotB=true; state.proj={x:Math.max(2,p.x-7),y:9.7,vx:5.8};
+    }
+    const pr=state.proj;
+    if(pr){
+      pr.x+=pr.vx*dt;
+      if(p.x+PW>pr.x&&p.x<pr.x+1&&p.y+PH>pr.y&&p.y<pr.y+.8) die();
+      if(pr.x>this.width+2||pr.x>p.x+12) state.proj=null;
+    }
   },
   drawFront(){
     if(T.phase!==2) return;
@@ -961,6 +980,7 @@ const LEVELS=[
     ctx.globalAlpha=0.9;
     ctx.fillRect(ex,0,Math.max(2,TS*0.14),FH*TS);
     ctx.globalAlpha=1;
+    drawProjectile();
   }
 },
 {

@@ -1131,6 +1131,20 @@ async function supportTicketForUser(env, userId) {
   ).bind(userId).first();
 }
 
+async function refundablePurchasesForUser(env, userId) {
+  const { results } = await env.DB.prepare(
+    `SELECT p.* FROM payments p
+     LEFT JOIN refunds r ON r.telegram_charge_id=p.telegram_charge_id
+     WHERE p.user_id=? AND (r.telegram_charge_id IS NULL OR r.status='failed')
+     ORDER BY p.created_at DESC LIMIT 10`,
+  ).bind(userId).all();
+  return results.filter((payment) => paymentCallbackReference(payment));
+}
+
+async function hasRefundablePurchase(env, userId) {
+  return (await refundablePurchasesForUser(env, userId)).length > 0;
+}
+
 async function startSupportTicket(env, message, kind) {
   const supportChatId = configuredId(env.SUPPORT_CHAT_ID, true);
   if (!supportChatId) {
@@ -1141,6 +1155,13 @@ async function startSupportTicket(env, message, kind) {
     return;
   }
   const userId = Number(message.from.id);
+  if (kind === "payment" && !(await hasRefundablePurchase(env, userId))) {
+    await telegram(env, "sendMessage", {
+      chat_id: message.chat.id,
+      text: "You have no refundable purchases.",
+    });
+    return false;
+  }
   let ticket = await supportTicketForUser(env, userId);
   let created = false;
   let upgraded = false;
@@ -1177,6 +1198,7 @@ async function startSupportTicket(env, message, kind) {
       inline_keyboard: [[{ text: "✅ Finish support", callback_data: `menu:done:${ticket.id}` }]],
     },
   });
+  return true;
 }
 
 async function relaySupportMessage(env, message, ticket) {
@@ -1289,6 +1311,14 @@ async function handleUserMenuCallback(env, query) {
   if (action === "terms") {
     await telegram(env, "answerCallbackQuery", { callback_query_id: query.id, text: "Terms opened." });
     await telegram(env, "sendMessage", { chat_id: chatId, text: TERMS_TEXT });
+    return true;
+  }
+  if (action === "paysupport" && !(await hasRefundablePurchase(env, userId))) {
+    await telegram(env, "answerCallbackQuery", {
+      callback_query_id: query.id,
+      text: "You have no refundable purchases.",
+      show_alert: true,
+    });
     return true;
   }
   await telegram(env, "answerCallbackQuery", {
@@ -1509,13 +1539,7 @@ async function handleSupportCallback(env, query) {
     return true;
   }
   if (action === "refund") {
-    const { results } = await env.DB.prepare(
-      `SELECT p.* FROM payments p LEFT JOIN refunds r
-       ON r.telegram_charge_id=p.telegram_charge_id
-       WHERE p.user_id=? AND (r.telegram_charge_id IS NULL OR r.status='failed')
-       ORDER BY p.created_at DESC LIMIT 10`,
-    ).bind(ticket.user_id).all();
-    const payments = results.filter((payment) => paymentCallbackReference(payment));
+    const payments = await refundablePurchasesForUser(env, ticket.user_id);
     if (!payments.length) {
       await telegram(env, "answerCallbackQuery", {
         callback_query_id: query.id,
